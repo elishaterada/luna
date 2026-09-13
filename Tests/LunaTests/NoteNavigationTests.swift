@@ -4,6 +4,80 @@ import LunaCore
 @testable import Luna
 
 final class NoteNavigationTests: XCTestCase {
+    @MainActor func testPinsDuplicatesAndSharedWindows() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
+        let workspace = Workspace(store: store,
+            skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        let original = try XCTUnwrap(workspace.selectedID)
+        workspace.editor.string = "Original"
+        workspace.textDidChange(Notification(name: NSText.didChangeNotification))
+        workspace.newNote()
+        workspace.togglePin(original)
+        XCTAssertEqual(workspace.notes.first?.id, original)
+        XCTAssertTrue(try XCTUnwrap(store.load().first(where: { $0.id == original })).isPinned)
+        workspace.duplicateNote(original)
+        let copy = try XCTUnwrap(workspace.selectedID)
+        XCTAssertNotEqual(copy, original)
+        XCTAssertEqual(workspace.editor.string, "Original")
+        XCTAssertNil(workspace.notes.first(where: { $0.id == copy })?.path)
+        let child = try XCTUnwrap(workspace.openNoteInWindow(copy))
+        defer { child.close() }
+        child.window?.makeKeyAndOrderFront(nil)
+        // XCTest has no active application/key window; verify the native responder chain directly.
+        XCTAssertTrue(child.window?.nextResponder === child)
+        XCTAssertTrue(child.responds(to: #selector(Workspace.save)))
+        XCTAssertTrue(child.responds(to: #selector(Workspace.deleteNote)))
+        child.editor.string = "Changed in another window"
+        child.textDidChange(Notification(name: NSText.didChangeNotification))
+        XCTAssertEqual(workspace.editor.string, "Changed in another window")
+        XCTAssertEqual(workspace.notes.first(where: { $0.id == original })?.text, "Original")
+        XCTAssertTrue(workspace.flushAllRecovery())
+        XCTAssertEqual(try store.load().first(where: { $0.id == copy })?.text, "Changed in another window")
+        XCTAssertTrue(child.removeNote(copy))
+        XCTAssertFalse(workspace.notes.contains(where: { $0.id == copy }))
+        XCTAssertNotEqual(workspace.selectedID, copy)
+        XCTAssertEqual(workspace.editor.string, workspace.notes.first(where: { $0.id == workspace.selectedID })?.text)
+    }
+    @MainActor func testReorderingAndDeletingPreserveSelectionAndRecovery() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
+        let workspace = Workspace(store: store,
+            skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        let initialID = try XCTUnwrap(workspace.selectedID)
+        // A brand-new note may not yet have a recovery file.
+        XCTAssertTrue(workspace.removeNote(initialID))
+        let first = try XCTUnwrap(workspace.selectedID)
+        workspace.newNote()
+        let second = try XCTUnwrap(workspace.selectedID)
+        workspace.newNote()
+        let third = try XCTUnwrap(workspace.selectedID)
+        workspace.editor.string = "Keep this edit"
+        workspace.textDidChange(Notification(name: NSText.didChangeNotification))
+        workspace.editor.setSelectedRange(NSRange(location: 4, length: 0))
+        XCTAssertTrue(workspace.moveNote(third, to: 3))
+        XCTAssertEqual(workspace.notes.map(\.id), [second, first, third])
+        XCTAssertEqual(workspace.selectedID, third)
+        XCTAssertEqual(workspace.editor.selectedRange().location, 4)
+        XCTAssertTrue(workspace.moveNote(first, to: 0))
+        XCTAssertTrue(workspace.flushRecovery())
+        XCTAssertEqual(try store.load().map(\.id), [first, second, third])
+        XCTAssertTrue(workspace.removeNote(second))
+        XCTAssertEqual(workspace.selectedID, third)
+        XCTAssertEqual(workspace.editor.string, "Keep this edit")
+        XCTAssertTrue(workspace.removeNote(third))
+        XCTAssertEqual(workspace.selectedID, first)
+        XCTAssertTrue(workspace.removeNote(first))
+        XCTAssertEqual(workspace.notes.count, 1)
+        XCTAssertEqual(workspace.editor.string, "")
+        XCTAssertEqual(try store.load().map(\.id), workspace.notes.map(\.id))
+    }
     @MainActor func testArrowNavigationKeepsListFocusUntilRightArrow() throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

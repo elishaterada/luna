@@ -54,6 +54,23 @@ final class RecoveryTests: XCTestCase {
         XCTAssertEqual(store.unreadableFiles.map { $0.resolvingSymlinksInPath() }, [broken.resolvingSymlinksInPath()])
         XCTAssertTrue(FileManager.default.fileExists(atPath: broken.path))
     }
+    func testSidebarOrderSurvivesEditsAndIgnoresDeletedIDs() throws {
+        let store = try RecoveryStore(directory: directory)
+        let first = Note(text: "First")
+        var second = Note(text: "Second")
+        try store.save(first); try store.save(second)
+        try store.saveOrder([first.id, second.id])
+        second.modified = Date().addingTimeInterval(60)
+        try store.save(second)
+        XCTAssertEqual(try store.load().map(\.id), [first.id, second.id])
+        try store.remove(first.id)
+        XCTAssertEqual(try store.load().map(\.id), [second.id])
+        let new = Note(text: "New")
+        try store.save(new)
+        XCTAssertEqual(try store.load().map(\.id), [new.id, second.id])
+        XCTAssertTrue(store.unreadableFiles.isEmpty)
+        try store.remove(first.id)
+    }
     func testLanguageDetectionAndNoteTitle() {
         XCTAssertEqual(Note.language(for: URL(fileURLWithPath: "/tmp/.env.local")), "Environment")
         XCTAssertEqual(Note.language(for: URL(fileURLWithPath: "/tmp/a.yaml")), "YAML")

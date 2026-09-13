@@ -1,6 +1,13 @@
 import Foundation
 
 public struct Note: Codable, Identifiable, Sendable {
+    public var attachments: [NoteAttachment]?
+    public var media: [NoteAttachment] { attachments ?? [] }
+    private var pinned: Bool?
+    public var isPinned: Bool {
+        get { pinned ?? false }
+        set { pinned = newValue }
+    }
     public var id: UUID
     public var text: String
     public var path: String?
@@ -58,16 +65,30 @@ public final class RecoveryStore: @unchecked Sendable {
     public private(set) var unreadableFiles: [URL] = []
     public func load() throws -> [Note] {
         unreadableFiles = []
-        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let notes = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
             .compactMap { url in
                 do { return try JSONDecoder().decode(Note.self, from: Data(contentsOf: url)) }
                 catch { unreadableFiles.append(url); return nil }
             }
             .sorted { $0.modified > $1.modified }
+        let orderURL = directory.appendingPathComponent("sidebar-order.plist")
+        let order = (try? PropertyListDecoder().decode([UUID].self, from: Data(contentsOf: orderURL))) ?? []
+        var remaining = Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0) })
+        let ordered = order.compactMap { remaining.removeValue(forKey: $0) }
+        return notes.filter { remaining[$0.id] != nil } + ordered
+    }
+    public func saveOrder(_ ids: [UUID]) throws {
+        let url = directory.appendingPathComponent("sidebar-order.plist")
+        try PropertyListEncoder().encode(ids).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
     public func remove(_ id: UUID) throws {
-        try FileManager.default.removeItem(at: directory.appendingPathComponent(id.uuidString).appendingPathExtension("json"))
+        let url = directory.appendingPathComponent(id.uuidString).appendingPathExtension("json")
+        do { try FileManager.default.removeItem(at: url) }
+        catch CocoaError.fileNoSuchFile { }
+        let assets = attachmentDirectory(id)
+        if FileManager.default.fileExists(atPath: assets.path) { try FileManager.default.removeItem(at: assets) }
     }
 }
 

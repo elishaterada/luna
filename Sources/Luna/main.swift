@@ -7,7 +7,7 @@ let processStarted = ProcessInfo.processInfo.systemUptime
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var workspace: Workspace!
     var commandSettings: CommandLineSettings!
-    lazy var updates = UpdateController { [weak self] in self?.workspace?.flushRecovery() ?? false }
+    lazy var updates = UpdateController { [weak self] in self?.workspace?.flushAllRecovery() ?? false }
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
             let directory: URL
@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else { urls.forEach { workspace.open($0) } }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { workspace.showWindow(nil); return true }
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply { workspace == nil || workspace.flushRecovery() ? .terminateNow : .terminateCancel }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply { workspace == nil || workspace.flushAllRecovery() ? .terminateNow : .terminateCancel }
     @objc func showSettings() { commandSettings.showWindow(nil) }
     func buildMenu() {
         let menu = NSMenu()
@@ -51,13 +51,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.addItem(.separator()); item(app, "Hide Luna", #selector(NSApplication.hide(_:)), "h", target: NSApp)
         item(app, "Quit Luna", #selector(NSApplication.terminate(_:)), "q", target: NSApp)
         let file = submenu("File")
-        item(file, "New Note", #selector(Workspace.newNote), "n", target: workspace)
-        item(file, "Open…", #selector(Workspace.openFile), "o", target: workspace)
+        item(file, "New Note", #selector(Workspace.newNote), "n")
+        item(file, "Open…", #selector(Workspace.openFile), "o")
         file.addItem(.separator())
-        item(file, "Save", #selector(Workspace.save), "s", target: workspace)
-        item(file, "Save As File…", #selector(Workspace.saveAs), "s", [.command, .shift], target: workspace)
+        item(file, "Save", #selector(Workspace.save), "s")
+        item(file, "Save As File…", #selector(Workspace.saveAs), "s", [.command, .shift])
         item(file, "Close Window", #selector(NSWindow.performClose(_:)), "w")
-        file.addItem(.separator()); item(file, "Remove from Luna…", #selector(Workspace.deleteNote), target: workspace)
+        file.addItem(.separator()); item(file, "Delete Note…", #selector(Workspace.deleteNote), "\u{8}")
         let edit = submenu("Edit")
         item(edit, "Undo", Selector(("undo:")), "z"); item(edit, "Redo", Selector(("redo:")), "z", [.command, .shift])
         edit.addItem(.separator()); item(edit, "Cut", #selector(NSText.cut(_:)), "x"); item(edit, "Copy", #selector(NSText.copy(_:)), "c")
@@ -65,11 +65,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(.separator())
         let find = NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f"); find.tag = NSTextFinder.Action.showFindInterface.rawValue; edit.addItem(find)
         let view = submenu("View")
-        item(view, "Toggle Notes", #selector(Workspace.toggleSidebar), "s", [.command, .option], target: workspace)
-        item(view, "Markdown Preview", #selector(Workspace.toggleMarkdownPreview), "m", [.command, .shift], target: workspace)
-        item(view, "Presentation Mode", #selector(Workspace.togglePresentation), "p", [.command, .shift], target: workspace)
-        view.addItem(.separator()); item(view, "Larger Text", #selector(Workspace.larger), "=", target: workspace)
-        item(view, "Smaller Text", #selector(Workspace.smaller), "-", target: workspace)
+        item(view, "Toggle Notes", #selector(Workspace.toggleSidebar), "s", [.command, .option])
+        item(view, "Markdown Preview", #selector(Workspace.toggleMarkdownPreview), "m", [.command, .shift])
+        item(view, "Presentation Mode", #selector(Workspace.togglePresentation), "p", [.command, .shift])
+        view.addItem(.separator()); item(view, "Larger Text", #selector(Workspace.larger), "=")
+        item(view, "Smaller Text", #selector(Workspace.smaller), "-")
         item(view, "Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
         let window = submenu("Window"); item(window, "Minimize", #selector(NSWindow.performMiniaturize(_:)), "m")
         item(window, "Zoom", #selector(NSWindow.performZoom(_:)))

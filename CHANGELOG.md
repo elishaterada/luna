@@ -1,5 +1,15 @@
 # Luna release notes
 
+## 0.4.0 — 2026-09-13
+
+- Drag notes into your preferred sidebar order and pin favorites at the top. Your arrangement survives restarting Luna.
+- Right-click notes to pin, duplicate, share, open in a new window, or delete. Use ⌘Delete to remove a note; saved files remain on disk.
+- Edit the same note in multiple synchronized windows, with menu commands and shortcuts acting on the active window.
+- Drop images, audio, and video into notes, then write between inline media blocks. Luna keeps its own attachment copies, including when you duplicate a note.
+- Paste HTTPS URLs or iframe code for live embeds, with oEmbed support for common providers. Switch between Source and Live View with ⌘⇧M; sites that prohibit embedding can be opened through their original links.
+- Save media notes as portable Markdown with a companion assets folder, and reopen those exports with their media intact.
+- Enjoy a cleaner editor header: save through File → Save or ⌘S without an extra Save button.
+
 ## 0.3.1 — 2026-09-13
 
 - Spot Luna more easily in the Dock with a larger full-body cat and a simpler moonlit icon, paired with Sora’s matching design.

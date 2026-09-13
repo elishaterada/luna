@@ -1,6 +1,35 @@
 import AppKit
 
 final class EditorView: NSTextView {
+    var onMediaDrop: (([URL], NSRange) -> Void)?
+    var onEmbedPaste: ((String) -> Void)?
+    override func paste(_ sender: Any?) {
+        if let value = NSPasteboard.general.string(forType: .string), let snippet = NoteEmbeds.insertion(value), let onEmbedPaste {
+            onEmbedPaste(snippet); return
+        }
+        super.paste(sender)
+    }
+    private func files(_ sender: NSDraggingInfo) -> [URL]? {
+        sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if let files = files(sender), !files.isEmpty, onMediaDrop != nil { return .copy }
+        return super.draggingEntered(sender)
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if let files = files(sender), !files.isEmpty, onMediaDrop != nil { return .copy }
+        return super.draggingUpdated(sender)
+    }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if let files = files(sender), !files.isEmpty, onMediaDrop != nil { return true }
+        return super.prepareForDragOperation(sender)
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let files = files(sender), !files.isEmpty, let onMediaDrop else { return super.performDragOperation(sender) }
+        let position = characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil))
+        onMediaDrop(files, NSRange(location: position, length: 0)); return true
+    }
+
     override var string: String { didSet { needsDisplay = true } }
     override func didChangeText() {
         super.didChangeText()

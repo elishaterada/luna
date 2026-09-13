@@ -2,17 +2,35 @@ import AppKit
 import LunaCore
 import Combine
 
-final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate, NSTableViewDataSource, NSTableViewDelegate, NSMenuItemValidation {
+final class WorkspaceSession {
     var notes: [Note] = []
+    var pendingMediaImports = 0
+    let windows = NSHashTable<Workspace>.weakObjects()
+    let diskQueue = DispatchQueue(label: "dev.luna.recovery", qos: .utility)
+}
+
+final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate, NSTableViewDataSource, NSTableViewDelegate, NSMenuItemValidation {
+    let session: WorkspaceSession
+    var notes: [Note] {
+        get { session.notes }
+        set {
+            session.notes = newValue.filter(\.isPinned) + newValue.filter { !$0.isPinned }
+            for other in session.windows.allObjects where other !== self { other.receiveNotes() }
+        }
+    }
+    private var additionalWindows: [Workspace] = []
+    private var sharingPicker: NSSharingServicePicker?
     var selectedID: UUID?
     let store: RecoveryStore
-    let diskQueue = DispatchQueue(label: "dev.luna.recovery", qos: .utility)
+    var diskQueue: DispatchQueue { session.diskQueue }
     var recoveryTask: DispatchWorkItem?
     var highlightTask: DispatchWorkItem?
     let highlighter = SyntaxHighlighter()
     let editor = EditorView(usingTextLayoutManager: true)
     let scroll = NSScrollView()
     let markdownPreview = MarkdownPreview()
+    let mediaView = MediaNoteView()
+    private(set) var richEditing = false
     private var previewButton: ChromeButton!
     private(set) var previewing = false
     let table = NoteListView()
@@ -54,7 +72,8 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     var lastRecoveryError: Error?
     var index: Int? { notes.firstIndex { $0.id == selectedID } }
 
-    init(store: RecoveryStore, skinLibrary: SkinLibrary? = nil) {
+    init(store: RecoveryStore, skinLibrary: SkinLibrary? = nil, session: WorkspaceSession? = nil) {
+        self.session = session ?? WorkspaceSession()
         self.store = store
         let skinRoot = ProcessInfo.processInfo.environment["LUNA_RECOVERY_DIR"].map {
             URL(fileURLWithPath: $0).appendingPathComponent("Skins", isDirectory: true)
@@ -74,13 +93,14 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         applyPreferences()
         skinObservation = skins.$configuration.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.applySkin() }
         applySkin()
-        do { notes = try store.load() } catch { showError(error) }
+        if session == nil { do { notes = try store.load() } catch { showError(error) } }
         if !store.unreadableFiles.isEmpty {
             let alert = NSAlert(); alert.messageText = "Some notes could not be recovered."
             alert.informativeText = "Luna kept the unreadable recovery files untouched in \(store.directory.path). Other notes are available."
             alert.runModal()
         }
         if notes.isEmpty { notes = [Note()] }
+        self.session.windows.add(self)
         reloadShelf(); select(notes[0].id)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -124,6 +144,17 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         table.style = .plain; table.backgroundColor = .clear; table.selectionHighlightStyle = .regular; table.delegate = self; table.dataSource = self
         table.setAccessibilityLabel("Notes and open files"); shelfScroll.documentView = table
         table.focusContent = { [weak self] in self?.focusContent() }
+        table.registerForDraggedTypes([Self.noteDragType])
+        table.setDraggingSourceOperationMask(.move, forLocal: true)
+        let noteMenu = NSMenu()
+        for (title, action) in [("Pin", #selector(pinClickedNote)), ("Duplicate", #selector(duplicateClickedNote)),
+                                ("Share…", #selector(shareClickedNote)), ("Open in New Window", #selector(openClickedNoteInWindow)),
+                                ("Delete Note…", #selector(deleteClickedNote))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            noteMenu.addItem(item)
+        }
+        table.menu = noteMenu
         let local = Theme.label("Stored on this Mac", size: 11)
         for view in [brand, tagline, shelfHeader, shelfScroll, local] { view.translatesAutoresizingMaskIntoConstraints = false; sidebar.addSubview(view) }
         NSLayoutConstraint.activate([
@@ -142,10 +173,8 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             sidebarButton.topAnchor.constraint(equalTo: root.topAnchor)
         ])
         presentationButton = Theme.button("play.rectangle", label: "Enter presentation mode (⌘⇧P)", target: self, action: #selector(togglePresentation), title: "Present", width: 92)
-        let saveButton = Theme.button("square.and.arrow.down", label: "Save (⌘S)", target: self, action: #selector(save), title: "Save", width: 72)
-        saveButton.showsBaseFill = true
         previewButton = Theme.button("", label: "Preview Markdown (⌘⇧M)", target: self, action: #selector(toggleMarkdownPreview), title: "Preview", width: 76)
-        let documentActions = NSStackView(views: [previewButton, presentationButton, saveButton]); documentActions.spacing = 8
+        let documentActions = NSStackView(views: [previewButton, presentationButton]); documentActions.spacing = 8
         scroll.documentView = editor; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         scroll.drawsBackground = false; scroll.borderType = .noBorder
         editor.isRichText = false; editor.importsGraphics = false; editor.allowsUndo = true
@@ -161,6 +190,18 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         editor.textContainer?.containerSize = NSSize(width: 700, height: CGFloat.greatestFiniteMagnitude)
         editor.minSize = NSSize(width: 0, height: 0); editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.delegate = self; editor.setAccessibilityLabel("Note editor")
+        editor.registerForDraggedTypes([.fileURL])
+        editor.onMediaDrop = { [weak self] urls, range in self?.importMedia(urls, range: range) }
+        editor.onEmbedPaste = { [weak self] snippet in self?.insertEmbed(snippet) }
+        mediaView.onImport = { [weak self] urls in self?.importMedia(urls) }
+        mediaView.onChange = { [weak self] source in
+            guard let self, let index = self.index else { return }
+            var note = self.notes[index]
+            note.text = source; note.modified = Date(); note.dirty = true
+            self.notes[index] = note
+            self.loading = true; self.editor.string = source; self.loading = false
+            self.updateHeader(); self.scheduleRecovery(); self.reloadShelf()
+        }
         updateFont()
         language.addItems(withTitles: ["Plain Text", "Markdown", "JavaScript", "TypeScript", "JSON", "YAML", "Environment", "Shell", "Python", "Swift", "CSS", "HTML", "Configuration"])
         language.isBordered = false; language.font = .systemFont(ofSize: 11); language.target = self; language.action = #selector(changeLanguage)
@@ -197,6 +238,15 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             markdownPreview.topAnchor.constraint(equalTo: scroll.topAnchor),
             markdownPreview.bottomAnchor.constraint(equalTo: scroll.bottomAnchor)
         ])
+        mediaView.translatesAutoresizingMaskIntoConstraints = false
+        mediaView.isHidden = true
+        main.addSubview(mediaView)
+        NSLayoutConstraint.activate([
+            mediaView.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            mediaView.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            mediaView.topAnchor.constraint(equalTo: scroll.topAnchor),
+            mediaView.bottomAnchor.constraint(equalTo: scroll.bottomAnchor)
+        ])
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
     }
@@ -207,13 +257,46 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         if let index { table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false) }
         reloadingShelf = false
     }
+    private static let noteDragType = NSPasteboard.PasteboardType("dev.luna.note")
+
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        guard notes.indices.contains(row) else { return nil }
+        let item = NSPasteboardItem()
+        item.setString(notes[row].id.uuidString, forType: Self.noteDragType)
+        return item
+    }
+    func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
+                   proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation {
+        guard info.draggingSource as? NSTableView === table, (0...notes.count).contains(row) else { return [] }
+        tableView.setDropRow(row, dropOperation: .above)
+        return .move
+    }
+    func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
+                   dropOperation: NSTableView.DropOperation) -> Bool {
+        guard info.draggingSource as? NSTableView === table,
+              let value = info.draggingPasteboard.string(forType: Self.noteDragType),
+              let id = UUID(uuidString: value) else { return false }
+        return moveNote(id, to: row)
+    }
+    @discardableResult func moveNote(_ id: UUID, to row: Int) -> Bool {
+        guard let source = notes.firstIndex(where: { $0.id == id }), (0...notes.count).contains(row) else { return false }
+        var reordered = notes
+        let note = reordered.remove(at: source)
+        reordered.insert(note, at: row > source ? row - 1 : row)
+        reordered = reordered.filter(\.isPinned) + reordered.filter { !$0.isPinned }
+        do { try diskQueue.sync { try store.saveOrder(reordered.map(\.id)) } }
+        catch { showError(error); return false }
+        notes = reordered
+        reloadShelf()
+        return true
+    }
     func numberOfRows(in tableView: NSTableView) -> Int { notes.count }
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { NoteRowView() }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let note = notes[row]
         let cell = NSTableCellView()
         cell.toolTip = note.path ?? note.title
-        let title = Theme.label(note.title, size: 13, color: Theme.text, weight: .medium)
+        let title = Theme.label((note.isPinned ? "📌 " : "") + note.title, size: 13, color: Theme.text, weight: .medium)
         let edited = Theme.label(note.path != nil && note.dirty ? "●" : "", size: 8, color: Theme.mint)
         edited.setAccessibilityLabel(note.path != nil && note.dirty ? "Unsaved changes" : "")
         for view in [title, edited] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
@@ -237,6 +320,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         previewing = false
         selectedID = id
         guard let index else { return }
+        richEditing = NoteEmbeds.hasContent(notes[index].text)
         loading = true; editor.string = notes[index].text; editor.undoManager?.removeAllActions(); loading = false
         language.selectItem(withTitle: notes[index].language); highlighter.configure(notes[index].language)
         table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
@@ -249,12 +333,20 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     func refreshCleanFile(_ id: UUID) {
         guard let note = notes.first(where: { $0.id == id }), !note.dirty, let path = note.path else { return }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result { try TextFile.read(URL(fileURLWithPath: path)) }
+            let result = Result {
+                let url = URL(fileURLWithPath: path)
+                var fresh = try TextFile.read(url)
+                if !note.media.isEmpty, fresh.diskModified == note.diskModified { return note }
+                fresh.id = id
+                guard let self else { return fresh }
+                return try self.diskQueue.sync { try self.store.recoverExportedMedia(fresh, from: url) }
+            }
             DispatchQueue.main.async {
                 guard let self, let index = self.notes.firstIndex(where: { $0.id == id }), !self.notes[index].dirty else { return }
                 switch result {
                 case .success(var fresh):
                     fresh.id = id
+                    fresh.isPinned = self.notes[index].isPinned
                     guard fresh.text != self.notes[index].text || fresh.diskModified != self.notes[index].diskModified else { return }
                     self.notes[index] = fresh
                     if self.selectedID == id {
@@ -287,6 +379,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     func textViewDidChangeSelection(_ notification: Notification) {
         // Avoid an O(file size) line count on every keystroke in large files.
+        if richEditing { position.stringValue = "Media note"; return }
         if previewing { position.stringValue = "Preview"; return }
         let location = editor.selectedRange().location
         if location > 200_000 { position.stringValue = "Position \(location.formatted())"; return }
@@ -303,16 +396,17 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     func persistCurrent() {
         guard let index else { return }; let note = notes[index]
+        let order = notes.map(\.id)
         diskQueue.async { [weak self] in
             guard let self else { return }
-            do { try self.store.save(note); DispatchQueue.main.async { self.lastRecoveryError = nil; self.updateHeader() } }
+            do { try self.store.save(note); try self.store.saveOrder(order); DispatchQueue.main.async { self.lastRecoveryError = nil; self.updateHeader() } }
             catch { DispatchQueue.main.async { self.lastRecoveryError = error; self.status.stringValue = "Recovery failed — use Save As"; self.showError(error) } }
         }
     }
     @discardableResult func flushRecovery() -> Bool {
         recoveryTask?.cancel()
         guard let index else { return true }
-        do { try diskQueue.sync { try store.save(notes[index]) }; lastRecoveryError = nil; return true }
+        do { try diskQueue.sync { try store.save(notes[index]); try store.saveOrder(notes.map(\.id)) }; lastRecoveryError = nil; return true }
         catch { lastRecoveryError = error; showError(error); return false }
     }
     @objc func viewportChanged() {
@@ -336,6 +430,44 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         viewportChanged()
     }
     @objc func newNote() { guard flushRecovery() else { return }; let note = Note(); notes.insert(note, at: 0); reloadShelf(); select(note.id, focusContent: true); persistCurrent(); showWindow(nil) }
+    func insertEmbed(_ snippet: String) {
+        editor.insertText(snippet, replacementRange: editor.selectedRange())
+        richEditing = true; updatePreview(); focusContent()
+    }
+    func importMedia(_ urls: [URL], range: NSRange? = nil) {
+        guard let id = selectedID else { return }
+        let sourceRange = range ?? editor.selectedRange()
+        let fromLiveView = richEditing
+        status.stringValue = "Adding media…"
+        session.pendingMediaImports += 1
+        diskQueue.async { [weak self] in
+            guard let self else { return }
+            let result = Result { try self.store.importMedia(urls, noteID: id) }
+            DispatchQueue.main.async {
+                defer { self.session.pendingMediaImports -= 1 }
+                switch result {
+                case .failure(let error): self.updateHeader(); self.showError(error)
+                case .success(let media):
+                    guard let row = self.notes.firstIndex(where: { $0.id == id }) else { return }
+                    self.notes[row].attachments = self.notes[row].media + media
+                    let snippet = "\n" + media.map { "![\($0.filename.replacingOccurrences(of: "]", with: "").replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " "))](\($0.reference))" }.joined(separator: "\n\n") + "\n"
+                    if self.selectedID == id, fromLiveView, self.richEditing {
+                        self.mediaView.insertSnippet(snippet)
+                    } else if self.selectedID == id {
+                        let length = (self.editor.string as NSString).length
+                        let insertion = min(sourceRange.location, length)
+                        self.editor.insertText(snippet, replacementRange: NSRange(location: insertion, length: min(sourceRange.length, length - insertion)))
+                        self.richEditing = true; self.updatePreview(); self.focusContent()
+                    } else {
+                        var note = self.notes[row]; note.text += snippet; note.modified = Date(); note.dirty = true
+                        self.notes[row] = note
+                        self.diskQueue.async { try? self.store.save(note) }
+                    }
+                    self.persistCurrent()
+                }
+            }
+        }
+    }
     @objc func openFile() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = true
         panel.beginSheetModal(for: window!) { [weak self] response in if response == .OK { panel.urls.forEach { self?.open($0) } } }
@@ -345,7 +477,11 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         if let existing = notes.first(where: { $0.path == url.path }) { select(existing.id); showWindow(nil); return }
         status.stringValue = "Opening \(url.lastPathComponent)…"
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result { try TextFile.read(url) }
+            let result = Result {
+                let note = try TextFile.read(url)
+                guard let self else { return note }
+                return try self.diskQueue.sync { try self.store.recoverExportedMedia(note, from: url) }
+            }
             DispatchQueue.main.async {
                 guard let self else { return }
                 switch result {
@@ -375,6 +511,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     @objc func saveAs() {
         guard let index else { return }; let id = notes[index].id
         let panel = NSSavePanel(); panel.nameFieldStringValue = notes[index].path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Untitled.txt"
+        if !notes[index].media.isEmpty { panel.nameFieldStringValue = "Untitled.md" }
         panel.canCreateDirectories = true
         panel.beginSheetModal(for: window!) { [weak self] result in
             guard let self, result == .OK, let url = panel.url, self.selectedID == id else { return }
@@ -384,7 +521,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     func writeCurrent(to url: URL) {
         guard let index else { return }
         do {
-            try TextFile.write(notes[index], to: url)
+            try diskQueue.sync { try store.export(notes[index], to: url) }
             notes[index].path = url.path; notes[index].dirty = false
             notes[index].diskModified = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             notes[index].language = Note.language(for: url); language.selectItem(withTitle: notes[index].language)
@@ -459,11 +596,13 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         updatePreview(); viewportChanged(); scheduleRecovery(); reloadShelf()
     }
     func focusContent() {
-        window?.makeFirstResponder(previewing ? markdownPreview : editor)
+        window?.makeFirstResponder(richEditing ? mediaView : (previewing ? markdownPreview : editor))
     }
     @objc func toggleMarkdownPreview() {
-        guard let index, notes[index].language == "Markdown" else { return }
-        previewing.toggle()
+        guard let index else { return }
+        if NoteEmbeds.hasContent(notes[index].text) || richEditing { richEditing.toggle(); previewing = false }
+        else if notes[index].language == "Markdown" { previewing.toggle() }
+        else { return }
         updatePreview()
         textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification))
         focusContent()
@@ -471,31 +610,131 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     private func updatePreview() {
         let isMarkdown = index.map { notes[$0].language == "Markdown" } ?? false
         if !isMarkdown { previewing = false }
-        previewButton?.isHidden = !isMarkdown
+        let hasMedia = index.map { NoteEmbeds.hasContent(notes[$0].text) } ?? false
+        previewButton?.isHidden = !isMarkdown && !hasMedia && !richEditing
         previewButton?.title = previewing ? "Edit" : "Preview"
         previewButton?.state = previewing ? .on : .off
         let help = previewing ? "Edit Markdown (⌘⇧M)" : "Preview Markdown (⌘⇧M)"
         previewButton?.toolTip = help; previewButton?.setAccessibilityLabel(help)
-        scroll.isHidden = previewing
-        markdownPreview.isHidden = !previewing
+        if hasMedia || richEditing {
+            previewButton?.title = richEditing ? "Source" : "Live View"
+            previewButton?.toolTip = richEditing ? "Edit note source (⌘⇧M)" : "Show media and embeds (⌘⇧M)"
+            previewButton?.setAccessibilityLabel(previewButton?.toolTip)
+        }
+        scroll.isHidden = previewing || richEditing
+        markdownPreview.isHidden = !previewing || richEditing
+        if !richEditing && !mediaView.isHidden { mediaView.suspend() }
+        mediaView.isHidden = !richEditing
+        if richEditing, let index {
+            mediaView.show(notes[index], store: store, fontSize: displayedFontSize, appearance: window?.effectiveAppearance ?? NSApp.effectiveAppearance)
+        }
         if previewing { markdownPreview.show(editor.string, fontSize: displayedFontSize, appearance: window?.effectiveAppearance ?? NSApp.effectiveAppearance) }
     }
+    private func receiveNotes() {
+        guard isWindowLoaded else { return }
+        if index == nil {
+            selectedID = nil
+            if let first = notes.first { select(first.id) }
+        } else if let index, editor.string != notes[index].text {
+            let selection = editor.selectedRange()
+            loading = true; editor.string = notes[index].text; loading = false
+            editor.undoManager?.removeAllActions()
+            editor.setSelectedRange(NSRange(location: min(selection.location, (editor.string as NSString).length), length: 0))
+            language.selectItem(withTitle: notes[index].language)
+            highlighter.configure(notes[index].language)
+            updateFont()
+        }
+        if let index {
+            language.selectItem(withTitle: notes[index].language)
+            highlighter.configure(notes[index].language)
+        }
+        reloadShelf(); updateHeader()
+    }
+    private var clickedNoteID: UUID? {
+        notes.indices.contains(table.clickedRow) ? notes[table.clickedRow].id : nil
+    }
+    @objc func pinClickedNote() { if let id = clickedNoteID { togglePin(id) } }
+    func togglePin(_ id: UUID) {
+        guard let row = notes.firstIndex(where: { $0.id == id }) else { return }
+        var updated = notes[row]; updated.isPinned.toggle()
+        do { try diskQueue.sync { try store.save(updated) } }
+        catch { showError(error); return }
+        notes[row] = updated
+        reloadShelf(); flushRecovery()
+    }
+    @objc func duplicateClickedNote() { if let id = clickedNoteID { duplicateNote(id) } }
+    func duplicateNote(_ id: UUID) {
+        guard let row = notes.firstIndex(where: { $0.id == id }), flushRecovery() else { return }
+        let original = notes[row]
+        var copy = Note(text: original.text, language: original.language)
+        copy.attachments = original.attachments
+        do { try diskQueue.sync { try store.copyAttachments(from: original, to: copy) } }
+        catch { showError(error); return }
+        notes.insert(copy, at: row + 1)
+        reloadShelf(); select(copy.id, focusContent: true); persistCurrent()
+    }
+    @objc func shareClickedNote() {
+        guard let id = clickedNoteID, let note = notes.first(where: { $0.id == id }) else { return }
+        let assets = note.media.filter { note.text.contains($0.reference) }
+        var sharedText = note.text
+        for item in assets { sharedText = sharedText.replacingOccurrences(of: item.reference, with: item.filename) }
+        sharingPicker = NSSharingServicePicker(items: [sharedText] + assets.map { store.attachmentURL($0, noteID: note.id) } as [Any])
+        sharingPicker?.show(relativeTo: table.rect(ofRow: table.clickedRow), of: table, preferredEdge: .maxX)
+    }
+    @objc func openClickedNoteInWindow() { if let id = clickedNoteID { openNoteInWindow(id) } }
+    @discardableResult func openNoteInWindow(_ id: UUID) -> Workspace? {
+        guard notes.contains(where: { $0.id == id }), flushRecovery() else { return nil }
+        let child = Workspace(store: store, skinLibrary: skins, session: session)
+        additionalWindows.append(child)
+        child.select(id, focusContent: true)
+        child.window?.setFrameAutosaveName("")
+        if let origin = window?.frame.origin { child.window?.setFrameOrigin(NSPoint(x: origin.x + 28, y: origin.y - 28)) }
+        child.showWindow(nil)
+        return child
+    }
     @objc func deleteNote() {
-        guard let index else { return }
-        let alert = NSAlert(); alert.messageText = notes[index].path == nil ? "Delete this note?" : "Remove this file from Luna?"
-        alert.informativeText = "The recovery copy will be deleted. Any file saved on disk will remain unchanged."
-        alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Remove")
+        guard let selectedID else { return }
+        confirmDeletion(selectedID)
+    }
+    @objc func deleteClickedNote() {
+        guard notes.indices.contains(table.clickedRow) else { return }
+        confirmDeletion(notes[table.clickedRow].id)
+    }
+    private func confirmDeletion(_ id: UUID) {
+        guard let note = notes.first(where: { $0.id == id }) else { return }
+        let alert = NSAlert(); alert.messageText = note.path == nil ? "Delete this note?" : "Remove this file from Luna?"
+        alert.informativeText = "“\(note.title)” will be removed from Luna. Any file saved on disk will remain unchanged."
+        alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: note.path == nil ? "Delete" : "Remove")
         guard alert.runModal() == .alertSecondButtonReturn else { return }
-        recoveryTask?.cancel(); let id = notes[index].id
-        do { try diskQueue.sync { try store.remove(id) } } catch { showError(error); return }
-        notes.remove(at: index); selectedID = nil
-        if notes.isEmpty { notes.append(Note()) }
-        reloadShelf(); select(notes[min(index, notes.count - 1)].id)
+        removeNote(id)
+    }
+    @discardableResult func removeNote(_ id: UUID) -> Bool {
+        guard let removedIndex = notes.firstIndex(where: { $0.id == id }), flushRecovery() else { return false }
+        do { try diskQueue.sync { try store.remove(id) } } catch { showError(error); return false }
+        let removedSelection = selectedID == id
+        var remaining = notes
+        remaining.remove(at: removedIndex)
+        if removedSelection { selectedID = nil }
+        notes = remaining.isEmpty ? [Note()] : remaining
+        reloadShelf()
+        if removedSelection { select(notes[min(removedIndex, notes.count - 1)].id) }
+        return flushRecovery()
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if [#selector(pinClickedNote), #selector(duplicateClickedNote), #selector(shareClickedNote), #selector(openClickedNoteInWindow)].contains(item.action) {
+            guard let id = clickedNoteID, let note = notes.first(where: { $0.id == id }) else { return false }
+            if item.action == #selector(pinClickedNote) { item.title = note.isPinned ? "Unpin" : "Pin" }
+            return true
+        }
+        if item.action == #selector(deleteClickedNote) {
+            guard notes.indices.contains(table.clickedRow) else { return false }
+            item.title = notes[table.clickedRow].path == nil ? "Delete Note…" : "Remove from Luna…"
+            return true
+        }
+        if item.action == #selector(deleteNote) { return index != nil }
         if item.action == #selector(toggleMarkdownPreview) {
             item.state = previewing ? .on : .off
-            return index.map { notes[$0].language == "Markdown" } ?? false
+            return index.map { notes[$0].language == "Markdown" || NoteEmbeds.hasContent(notes[$0].text) || richEditing } ?? false
         }
         if item.action == #selector(togglePresentation) { item.state = presenting ? .on : .off }
         if item.action == #selector(toggleSidebar) { item.state = !sidebar.isHidden ? .on : .off }
@@ -503,6 +742,9 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         if item.action == #selector(smaller) { return displayedFontSize > minimumDisplayedSize }
         return true
     }
-    func windowShouldClose(_ sender: NSWindow) -> Bool { flushRecovery() }
+    func flushAllRecovery() -> Bool { session.pendingMediaImports == 0 && session.windows.allObjects.allSatisfy { $0.flushRecovery() } }
+    override func showWindow(_ sender: Any?) { super.showWindow(sender); updatePreview() }
+    func windowWillClose(_ notification: Notification) { mediaView.suspend() }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { session.pendingMediaImports == 0 && flushRecovery() }
     func showError(_ error: Error) { NSAlert(error: error).runModal() }
 }
