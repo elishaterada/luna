@@ -1,13 +1,20 @@
 import AppKit
 
 final class EditorView: NSTextView {
+    override var string: String { didSet { needsDisplay = true } }
+    override func didChangeText() {
+        super.didChangeText()
+        // TextKit redraws glyphs independently; invalidate our empty-state drawing too.
+        needsDisplay = true
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard string.isEmpty else { return }
         let origin = NSPoint(x: textContainerInset.width + 5, y: textContainerInset.height)
         ("Start with a thought." as NSString).draw(at: origin, withAttributes: [
             .font: font ?? NSFont.monospacedSystemFont(ofSize: 18, weight: .regular),
-            .foregroundColor: Theme.muted.withAlphaComponent(0.6)
+            .foregroundColor: Theme.muted
         ])
     }
 
@@ -18,9 +25,9 @@ final class EditorView: NSTextView {
         let prefix = source.substring(with: NSRange(location: line.location, length: location - line.location))
         let indentation = String(prefix.prefix { $0 == " " || $0 == "\t" })
         super.insertNewline(sender)
-        if !indentation.isEmpty { insertText(indentation, replacementRange: selectedRange()) }
+        if EditorPreferences.autoIndent && !indentation.isEmpty { insertText(indentation, replacementRange: selectedRange()) }
     }
-    override func insertTab(_ sender: Any?) { insertText("    ", replacementRange: selectedRange()) }
+    override func insertTab(_ sender: Any?) { insertText(EditorPreferences.useTabs ? "\t" : String(repeating: " ", count: EditorPreferences.tabWidth), replacementRange: selectedRange()) }
 }
 
 /// Color only the visible viewport plus context. No access to layoutManager:
@@ -72,7 +79,7 @@ final class SyntaxHighlighter {
         let snippet = (view.string as NSString).substring(with: range)
         storage.beginEditing()
         storage.addAttribute(.foregroundColor, value: Theme.text, range: range)
-        for (regex, color) in rules {
+        for (regex, color) in (EditorPreferences.syntaxColors ? rules : []) {
             regex.enumerateMatches(in: snippet, range: NSRange(location: 0, length: (snippet as NSString).length)) { match, _, _ in
                 guard let match else { return }
                 storage.addAttribute(.foregroundColor, value: color,

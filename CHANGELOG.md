@@ -1,5 +1,16 @@
 # Luna release notes
 
+## 0.2.0 — 2026-09-13
+
+### Make this space yours
+
+- Enjoy Sora-inspired Liquid Glass, a refreshed app icon, and clearer editor controls with matching light and dark colors.
+- Make your notes feel personal with photo and video skins. Click or drop files into the centered import area; Luna keeps its own copies and leaves your originals untouched.
+- Fine-tune your skins with readability tint, transparent-image backgrounds, softened edges, optional perspective, and automatic rotation. Videos start muted.
+- Add a little play with optional ambient glow, adjustable typing shake, ten keyboard sounds, and a Return-key light pulse. Animated effects respect Reduce Motion.
+- Customize fonts, spacing, wrapping, indentation, syntax colors, spelling, and presentation size from the new settings sidebar.
+- Keep your place when leaving presentation mode, save existing files directly from the toolbar, and start typing without a lingering empty-note hint.
+
 ## 0.1.1 — 2026-09-12
 
 ### Reliable updates

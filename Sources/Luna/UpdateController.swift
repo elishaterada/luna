@@ -10,7 +10,7 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
     init(checkpoint: @escaping () -> Bool) { self.checkpoint = checkpoint; super.init() }
 
     func start() {
-        guard !started, Bundle.main.bundleURL.pathExtension == "app",
+        guard !started, Bundle.main.object(forInfoDictionaryKey: "LunaDevelopmentBuild") as? Bool != true, Bundle.main.bundleURL.pathExtension == "app",
               ProcessInfo.processInfo.environment["LUNA_RECOVERY_DIR"] == nil else { return }
         #if DEBUG
         return

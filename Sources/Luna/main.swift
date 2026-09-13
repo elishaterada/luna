@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else { directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Luna/Recovery", isDirectory: true) }
             workspace = Workspace(store: try RecoveryStore(directory: directory))
             let zshDirectory = ProcessInfo.processInfo.environment["ZDOTDIR"].map { URL(fileURLWithPath: $0) }
-            commandSettings = CommandLineSettings(integration: CommandLineIntegration(home: FileManager.default.homeDirectoryForCurrentUser, appURL: Bundle.main.bundleURL, zshDirectory: zshDirectory))
+            commandSettings = CommandLineSettings(integration: CommandLineIntegration(home: FileManager.default.homeDirectoryForCurrentUser, appURL: Bundle.main.bundleURL, zshDirectory: zshDirectory), skins: workspace.skins)
             buildMenu(); workspace.showWindow(nil); NSApp.activate(ignoringOtherApps: true)
             if let report = ProcessInfo.processInfo.environment["LUNA_BENCHMARK_REPORT"] {
                 runBenchmark(workspace, started: processStarted, reportPath: report)
