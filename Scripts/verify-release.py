@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import subprocess
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -24,8 +25,11 @@ def fetch(url):
 
 
 def verify(tag, build):
-    release = json.loads(fetch(f'https://api.github.com/repos/{REPO}/releases/latest'))
-    assert release['tag_name'] == tag and not release['draft'] and not release['prerelease']
+    # The shared runner's anonymous API quota is often exhausted. Only metadata
+    # uses gh's existing authentication; feed and ZIP downloads stay anonymous.
+    metadata = subprocess.run(['gh', 'release', 'view', '--repo', REPO, '--json', 'tagName,isDraft,isPrerelease,body'], check=True, capture_output=True)
+    release = json.loads(metadata.stdout)
+    assert release['tagName'] == tag and not release['isDraft'] and not release['isPrerelease']
     assert 'A little space' in release['body'] or len(release['body'].strip()) > 100
     feed_data = fetch(f'https://github.com/{REPO}/releases/latest/download/appcast.xml')
     assert feed_data == (ROOT / 'dist/appcast.xml').read_bytes(), 'Published feed differs from signed feed'

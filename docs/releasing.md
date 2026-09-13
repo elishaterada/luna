@@ -27,7 +27,7 @@ The workflow verifies that its secret derives the public key embedded in the pac
    ```
 
 6. Wait for **Release Luna** to finish. Do not call the release complete while the job is queued or still running.
-7. Verify the public latest-release URL, its highlights, ZIP and `appcast.xml`. The workflow downloads them without authentication and compares them byte-for-byte with the artifacts verified before upload.
+7. Verify the public latest-release URL, its highlights, ZIP and `appcast.xml`. The workflow reads release metadata with GitHub authentication, downloads the feed and ZIP without authentication, and compares them byte-for-byte with the artifacts verified before upload.
 8. Test **Luna → Check for Updates…** in an older Sparkle-enabled copy: review the highlights, install, relaunch, and confirm notes recover and the new version is running.
 
 The workflow builds on `macos-26`, requires Apple Silicon and a version tag on `main`, assigns a UTC timestamp as monotonically increasing `CFBundleVersion`, and publishes through a draft after all files are signed. It refuses to overwrite existing releases. If an upload fails leaving a draft, inspect and remove the incomplete draft before retrying; never replace artifacts of a published release. `workflow_dispatch` accepts an existing version tag for recovery, not arbitrary shell input.
