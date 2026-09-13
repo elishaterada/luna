@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.2.1 — 2026-09-13
+
+- A new moonlit app icon pairs Luna’s cat silhouette with a softly shaded moon, midnight slate background, and mint note accent.
+
 ## 0.2.0 — 2026-09-13
 
 ### Make this space yours
