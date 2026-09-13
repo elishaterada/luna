@@ -1,6 +1,43 @@
 import AppKit
 
 final class EditorView: NSTextView {
+    private var dismissedCalculation: String?
+    var calculationSuggestion: String? {
+        let selection = selectedRange()
+        guard isEditable, !hasMarkedText(), selection.length == 0 else { return nil }
+        let source = string as NSString
+        guard selection.location <= source.length else { return nil }
+        // Bound the scan even for very large notes and lines.
+        let start = max(0, selection.location - 1025)
+        let before = source.substring(with: NSRange(location: start, length: selection.location - start))
+        let line = before.components(separatedBy: .newlines).last ?? ""
+        guard line.trimmingCharacters(in: .whitespaces).hasSuffix("="), line != dismissedCalculation,
+              selection.location == source.length || CharacterSet.newlines.contains(UnicodeScalar(source.character(at: selection.location)) ?? " ") else { return nil }
+        let lineStart = selection.location - (line as NSString).length
+        let contextStart = max(0, lineStart - 32_768)
+        var context = source.substring(with: NSRange(location: contextStart, length: lineStart - contextStart))
+        if contextStart > 0 {
+            context = context.firstIndex(of: "\n").map { String(context[context.index(after: $0)...]) } ?? ""
+        }
+        guard let result = CalculationSuggestion.result(for: line, context: context) else { return nil }
+        return (line.last?.isWhitespace == true ? "" : " ") + result
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting flag: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: flag)
+        dismissedCalculation = nil
+        needsDisplay = true
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if calculationSuggestion != nil {
+            let source = string as NSString
+            let location = selectedRange().location
+            let start = max(0, location - 1025)
+            dismissedCalculation = source.substring(with: NSRange(location: start, length: location - start)).components(separatedBy: .newlines).last
+            needsDisplay = true
+        } else { super.cancelOperation(sender) }
+    }
     var onMediaDrop: (([URL], NSRange) -> Void)?
     var onEmbedPaste: ((String) -> Void)?
     override func paste(_ sender: Any?) {
@@ -33,12 +70,25 @@ final class EditorView: NSTextView {
     override var string: String { didSet { needsDisplay = true } }
     override func didChangeText() {
         super.didChangeText()
+        dismissedCalculation = nil
         // TextKit redraws glyphs independently; invalidate our empty-state drawing too.
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        if let suggestion = calculationSuggestion, let window, window.firstResponder === self {
+            let caret = firstRect(forCharacterRange: selectedRange(), actualRange: nil)
+            let rect = convert(window.convertFromScreen(caret), from: nil)
+            let suggestionFont = font ?? NSFont.monospacedSystemFont(ofSize: 18, weight: .regular)
+            let available = NSRect(x: rect.minX, y: rect.minY, width: max(0, bounds.maxX - textContainerInset.width - rect.minX), height: rect.height)
+            NSGraphicsContext.saveGraphicsState()
+            available.clip()
+            (suggestion as NSString).draw(at: NSPoint(x: rect.minX, y: rect.minY), withAttributes: [
+                .font: suggestionFont, .foregroundColor: Theme.muted.withAlphaComponent(0.65)
+            ])
+            NSGraphicsContext.restoreGraphicsState()
+        }
         guard string.isEmpty else { return }
         let origin = NSPoint(x: textContainerInset.width + 5, y: textContainerInset.height)
         ("Start with a thought." as NSString).draw(at: origin, withAttributes: [
@@ -56,7 +106,10 @@ final class EditorView: NSTextView {
         super.insertNewline(sender)
         if EditorPreferences.autoIndent && !indentation.isEmpty { insertText(indentation, replacementRange: selectedRange()) }
     }
-    override func insertTab(_ sender: Any?) { insertText(EditorPreferences.useTabs ? "\t" : String(repeating: " ", count: EditorPreferences.tabWidth), replacementRange: selectedRange()) }
+    override func insertTab(_ sender: Any?) {
+        let value = calculationSuggestion ?? (EditorPreferences.useTabs ? "\t" : String(repeating: " ", count: EditorPreferences.tabWidth))
+        insertText(value, replacementRange: selectedRange())
+    }
 }
 
 /// Color only the visible viewport plus context. No access to layoutManager:

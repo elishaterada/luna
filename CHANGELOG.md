@@ -1,5 +1,12 @@
 # Luna release notes
 
+## 0.5.0 — 2026-09-13
+
+- Calculate as you write: finish an expression with `=` to see a subtle inline result, press Tab to accept it, or Escape to dismiss. Accepted results support undo.
+- Work with percentages and price adjustments, convert units, and combine mixed lengths, weights, volumes, and durations such as `1h 25m + 45m`.
+- Add or subtract days, weeks, months, and years from dates, including `today`.
+- Reference named values from earlier lines, such as `Hourly rate: $150` and `Hours: 2080`. New suggestions use updated inputs; accepted results remain ordinary text.
+
 ## 0.4.1 — 2026-09-13
 
 - Click Markdown preview checkboxes to mark tasks complete or incomplete. Changes update the source, support undo, and are kept in local recovery; use ⌘S to save opened files.
