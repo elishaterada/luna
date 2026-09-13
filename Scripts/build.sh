@@ -6,6 +6,7 @@ APP="$PWD/dist/Luna.app"
 SPARKLE="$PWD/.build/artifacts/sparkle/Sparkle"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp .build/release/Luna "$APP/Contents/MacOS/Luna"
+ditto .build/release/Luna_Luna.bundle "$APP/Contents/Resources/Luna_Luna.bundle"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 if [[ -n "${MARKETING_VERSION:-}" ]]; then /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$APP/Contents/Info.plist"; fi
 if [[ -n "${CURRENT_PROJECT_VERSION:-}" ]]; then /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CURRENT_PROJECT_VERSION" "$APP/Contents/Info.plist"; fi

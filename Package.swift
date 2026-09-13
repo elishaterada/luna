@@ -6,7 +6,7 @@ let package = Package(
     dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6")],
     targets: [
         .target(name: "LunaCore"),
-        .executableTarget(name: "Luna", dependencies: ["LunaCore", .product(name: "Sparkle", package: "Sparkle")], linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
+        .executableTarget(name: "Luna", dependencies: ["LunaCore", .product(name: "Sparkle", package: "Sparkle")], resources: [.copy("Resources")], linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "LunaCoreTests", dependencies: ["LunaCore"]),
         .testTarget(name: "LunaTests", dependencies: ["Luna", "LunaCore"], resources: [.copy("Fixtures")])
     ], swiftLanguageModes: [.v5]

@@ -4,8 +4,8 @@ enum Theme {
     enum Layout {
         static let sidebarWidth: CGFloat = 248
         static let inset: CGFloat = 24
-        static let rowHeight: CGFloat = 68
-        static let compactRowHeight: CGFloat = 56
+        static let rowHeight: CGFloat = 36
+        static let compactRowHeight: CGFloat = 28
     }
 
     // Sora's Panda palette, with contrast-safe light counterparts.
@@ -41,14 +41,7 @@ enum Theme {
         button.heightAnchor.constraint(equalToConstant: 32).isActive = true
         return button
     }
-    static func sidebarAction(_ symbol: String, title: String, help: String, target: AnyObject, action: Selector) -> ChromeButton {
-        let button = ChromeButton(title: title, target: target, action: action)
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        button.contentAlignment = .left; button.isBordered = false
-        button.toolTip = help; button.setAccessibilityLabel(help)
-        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
-        return button
-    }
+
 
 }
 

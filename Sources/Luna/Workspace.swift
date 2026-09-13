@@ -12,7 +12,10 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     let highlighter = SyntaxHighlighter()
     let editor = EditorView(usingTextLayoutManager: true)
     let scroll = NSScrollView()
-    let table = NSTableView()
+    let markdownPreview = MarkdownPreview()
+    private var previewButton: ChromeButton!
+    private(set) var previewing = false
+    let table = NoteListView()
     let sidebar = Surface(Theme.panel)
     let main = Surface(Theme.background)
     let skinBackground = SkinBackgroundView()
@@ -120,20 +123,14 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         table.headerView = nil; table.backgroundColor = .clear; table.rowHeight = Theme.Layout.rowHeight; table.intercellSpacing = NSSize(width: 0, height: 4)
         table.style = .plain; table.backgroundColor = .clear; table.selectionHighlightStyle = .regular; table.delegate = self; table.dataSource = self
         table.setAccessibilityLabel("Notes and open files"); shelfScroll.documentView = table
-        let open = Theme.sidebarAction("folder", title: "Open File…", help: "Open files (⌘O)", target: self, action: #selector(openFile))
-        let settings = Theme.sidebarAction("gearshape", title: "Settings…", help: "Settings (⌘,)", target: self, action: #selector(openSettings))
-        let bottomActions = NSStackView(views: [open, settings])
-        bottomActions.orientation = .vertical; bottomActions.alignment = .leading; bottomActions.spacing = 4
+        table.focusContent = { [weak self] in self?.focusContent() }
         let local = Theme.label("Stored on this Mac", size: 11)
-        for view in [brand, tagline, shelfHeader, shelfScroll, bottomActions, local] { view.translatesAutoresizingMaskIntoConstraints = false; sidebar.addSubview(view) }
+        for view in [brand, tagline, shelfHeader, shelfScroll, local] { view.translatesAutoresizingMaskIntoConstraints = false; sidebar.addSubview(view) }
         NSLayoutConstraint.activate([
             brand.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 56), brand.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 24),
             tagline.topAnchor.constraint(equalTo: brand.bottomAnchor, constant: 8), tagline.leadingAnchor.constraint(equalTo: brand.leadingAnchor),
             shelfHeader.topAnchor.constraint(equalTo: tagline.bottomAnchor, constant: 24), shelfHeader.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 24), shelfHeader.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -24),
-            shelfScroll.topAnchor.constraint(equalTo: shelfHeader.bottomAnchor, constant: 8), shelfScroll.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12), shelfScroll.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12), shelfScroll.bottomAnchor.constraint(equalTo: bottomActions.topAnchor, constant: -24),
-            bottomActions.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 16), bottomActions.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -16),
-            bottomActions.bottomAnchor.constraint(equalTo: local.topAnchor, constant: -16),
-            open.widthAnchor.constraint(equalTo: bottomActions.widthAnchor), settings.widthAnchor.constraint(equalTo: bottomActions.widthAnchor),
+            shelfScroll.topAnchor.constraint(equalTo: shelfHeader.bottomAnchor, constant: 8), shelfScroll.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12), shelfScroll.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12), shelfScroll.bottomAnchor.constraint(equalTo: local.topAnchor, constant: -16),
             local.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 28), local.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -24)
         ])
         let titleStack = NSStackView(views: [heading, subtitle]); titleStack.orientation = .vertical; titleStack.alignment = .leading; titleStack.spacing = 8
@@ -147,7 +144,8 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         presentationButton = Theme.button("play.rectangle", label: "Enter presentation mode (⌘⇧P)", target: self, action: #selector(togglePresentation), title: "Present", width: 92)
         let saveButton = Theme.button("square.and.arrow.down", label: "Save (⌘S)", target: self, action: #selector(save), title: "Save", width: 72)
         saveButton.showsBaseFill = true
-        let documentActions = NSStackView(views: [presentationButton, saveButton]); documentActions.spacing = 8
+        previewButton = Theme.button("", label: "Preview Markdown (⌘⇧M)", target: self, action: #selector(toggleMarkdownPreview), title: "Preview", width: 76)
+        let documentActions = NSStackView(views: [previewButton, presentationButton, saveButton]); documentActions.spacing = 8
         scroll.documentView = editor; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         scroll.drawsBackground = false; scroll.borderType = .noBorder
         editor.isRichText = false; editor.importsGraphics = false; editor.allowsUndo = true
@@ -190,6 +188,15 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             line.heightAnchor.constraint(equalToConstant: 1), dividerInset, dividerTrailing, line.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -16),
             footerInset, footerTrailing, footer.bottomAnchor.constraint(equalTo: main.bottomAnchor, constant: -20), footer.heightAnchor.constraint(equalToConstant: 32)
         ])
+        markdownPreview.translatesAutoresizingMaskIntoConstraints = false
+        markdownPreview.isHidden = true
+        main.addSubview(markdownPreview)
+        NSLayoutConstraint.activate([
+            markdownPreview.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            markdownPreview.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            markdownPreview.topAnchor.constraint(equalTo: scroll.topAnchor),
+            markdownPreview.bottomAnchor.constraint(equalTo: scroll.bottomAnchor)
+        ])
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
     }
@@ -207,15 +214,15 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         let cell = NSTableCellView()
         cell.toolTip = note.path ?? note.title
         let title = Theme.label(note.title, size: 13, color: Theme.text, weight: .medium)
-        let detail = Theme.label(note.path == nil ? "\(note.language)" : "File  ·  \(note.language)\(note.dirty ? "  ·  Edited" : "")", size: 11)
-        let icon = NSImageView(image: NSImage(systemSymbolName: note.path == nil ? "note.text" : "chevron.left.forwardslash.chevron.right", accessibilityDescription: nil)!)
-        icon.contentTintColor = Theme.mint
-        let labels = NSStackView(views: [title, detail]); labels.orientation = .vertical; labels.alignment = .leading; labels.spacing = 6
-        for view in [icon, labels] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
+        let edited = Theme.label(note.path != nil && note.dirty ? "●" : "", size: 8, color: Theme.mint)
+        edited.setAccessibilityLabel(note.path != nil && note.dirty ? "Unsaved changes" : "")
+        for view in [title, edited] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 16), icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor), icon.widthAnchor.constraint(equalToConstant: 18),
-            labels.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 12), labels.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -16), labels.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            title.widthAnchor.constraint(equalTo: labels.widthAnchor), detail.widthAnchor.constraint(equalTo: labels.widthAnchor)
+            title.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 12),
+            title.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            title.trailingAnchor.constraint(equalTo: edited.leadingAnchor, constant: -8),
+            edited.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -12),
+            edited.centerYAnchor.constraint(equalTo: cell.centerYAnchor), edited.widthAnchor.constraint(equalToConstant: 8)
         ])
         return cell
     }
@@ -225,15 +232,18 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         let id = notes[table.selectedRow].id
         if id != selectedID { select(id) }
     }
-    func select(_ id: UUID) {
+    func select(_ id: UUID, focusContent: Bool = false) {
         guard flushRecovery() else { return }
+        previewing = false
         selectedID = id
         guard let index else { return }
         loading = true; editor.string = notes[index].text; editor.undoManager?.removeAllActions(); loading = false
         language.selectItem(withTitle: notes[index].language); highlighter.configure(notes[index].language)
         table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         editor.setSelectedRange(NSRange(location: 0, length: 0)); editor.scrollToBeginningOfDocument(nil)
-        updateHeader(); updateFont(); viewportChanged(); window?.makeFirstResponder(editor)
+        updateHeader(); updateFont(); viewportChanged()
+        if focusContent || sidebar.isHidden { self.focusContent() }
+        else { window?.makeFirstResponder(table) }
         refreshCleanFile(id)
     }
     func refreshCleanFile(_ id: UUID) {
@@ -259,6 +269,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     func updateHeader() {
         guard let index else { return }; let note = notes[index]
+        updatePreview()
         heading.stringValue = note.title
         heading.toolTip = note.title
         subtitle.toolTip = presenting ? nil : note.path
@@ -276,6 +287,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     func textViewDidChangeSelection(_ notification: Notification) {
         // Avoid an O(file size) line count on every keystroke in large files.
+        if previewing { position.stringValue = "Preview"; return }
         let location = editor.selectedRange().location
         if location > 200_000 { position.stringValue = "Position \(location.formatted())"; return }
         let prefix = (editor.string as NSString).substring(to: min(location, (editor.string as NSString).length))
@@ -317,12 +329,13 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         editor.defaultParagraphStyle = paragraph
         editor.typingAttributes = [.font: editor.font!, .foregroundColor: Theme.text, .paragraphStyle: paragraph]
         if let storage = editor.textStorage { storage.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: storage.length)) }
+        updatePreview()
         sizeLabel.stringValue = "\(Int(size)) pt"
         smallerButton?.isEnabled = size > minimumDisplayedSize
         largerButton?.isEnabled = size < maximumDisplayedSize
         viewportChanged()
     }
-    @objc func newNote() { guard flushRecovery() else { return }; let note = Note(); notes.insert(note, at: 0); reloadShelf(); select(note.id); persistCurrent(); showWindow(nil) }
+    @objc func newNote() { guard flushRecovery() else { return }; let note = Note(); notes.insert(note, at: 0); reloadShelf(); select(note.id, focusContent: true); persistCurrent(); showWindow(nil) }
     @objc func openFile() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = true
         panel.beginSheetModal(for: window!) { [weak self] response in if response == .OK { panel.urls.forEach { self?.open($0) } } }
@@ -397,6 +410,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         dividerInset.constant = inset; dividerTrailing.constant = -inset
         sidebar.isHidden = presenting || !notesVisible
         sidebarWidth.constant = sidebar.isHidden ? 0 : Theme.Layout.sidebarWidth
+        if sidebar.isHidden, window?.firstResponder === table { focusContent() }
         sidebarButton.state = sidebar.isHidden ? .off : .on
         let sidebarHelp = sidebar.isHidden ? "Show notes (⌘⌥S)" : "Hide notes (⌘⌥S)"
         sidebarButton.toolTip = sidebarHelp; sidebarButton.setAccessibilityLabel(sidebarHelp)
@@ -424,7 +438,6 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         sidebar.fillOpacity = 0.25
         main.fillOpacity = 0
     }
-    @objc private func openSettings() { NSApp.sendAction(#selector(AppDelegate.showSettings), to: NSApp.delegate, from: self) }
     @objc func toggleSidebar() {
         if presenting { presenting = false; notesVisible = true } else { notesVisible.toggle() }
         updateLayout(); applyWrapping(); updateFont(); updateHeader()
@@ -443,7 +456,29 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         guard let index else { return }; notes[index].language = language.titleOfSelectedItem ?? "Plain Text"
         highlighter.configure(notes[index].language)
         editor.textStorage?.addAttribute(.foregroundColor, value: Theme.text, range: NSRange(location: 0, length: editor.textStorage?.length ?? 0))
-        viewportChanged(); scheduleRecovery(); reloadShelf()
+        updatePreview(); viewportChanged(); scheduleRecovery(); reloadShelf()
+    }
+    func focusContent() {
+        window?.makeFirstResponder(previewing ? markdownPreview : editor)
+    }
+    @objc func toggleMarkdownPreview() {
+        guard let index, notes[index].language == "Markdown" else { return }
+        previewing.toggle()
+        updatePreview()
+        textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification))
+        focusContent()
+    }
+    private func updatePreview() {
+        let isMarkdown = index.map { notes[$0].language == "Markdown" } ?? false
+        if !isMarkdown { previewing = false }
+        previewButton?.isHidden = !isMarkdown
+        previewButton?.title = previewing ? "Edit" : "Preview"
+        previewButton?.state = previewing ? .on : .off
+        let help = previewing ? "Edit Markdown (⌘⇧M)" : "Preview Markdown (⌘⇧M)"
+        previewButton?.toolTip = help; previewButton?.setAccessibilityLabel(help)
+        scroll.isHidden = previewing
+        markdownPreview.isHidden = !previewing
+        if previewing { markdownPreview.show(editor.string, fontSize: displayedFontSize, appearance: window?.effectiveAppearance ?? NSApp.effectiveAppearance) }
     }
     @objc func deleteNote() {
         guard let index else { return }
@@ -458,6 +493,10 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         reloadShelf(); select(notes[min(index, notes.count - 1)].id)
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleMarkdownPreview) {
+            item.state = previewing ? .on : .off
+            return index.map { notes[$0].language == "Markdown" } ?? false
+        }
         if item.action == #selector(togglePresentation) { item.state = presenting ? .on : .off }
         if item.action == #selector(toggleSidebar) { item.state = !sidebar.isHidden ? .on : .off }
         if item.action == #selector(larger) { return displayedFontSize < maximumDisplayedSize }

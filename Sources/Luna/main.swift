@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let find = NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f"); find.tag = NSTextFinder.Action.showFindInterface.rawValue; edit.addItem(find)
         let view = submenu("View")
         item(view, "Toggle Notes", #selector(Workspace.toggleSidebar), "s", [.command, .option], target: workspace)
+        item(view, "Markdown Preview", #selector(Workspace.toggleMarkdownPreview), "m", [.command, .shift], target: workspace)
         item(view, "Presentation Mode", #selector(Workspace.togglePresentation), "p", [.command, .shift], target: workspace)
         view.addItem(.separator()); item(view, "Larger Text", #selector(Workspace.larger), "=", target: workspace)
         item(view, "Smaller Text", #selector(Workspace.smaller), "-", target: workspace)

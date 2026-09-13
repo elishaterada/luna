@@ -1,5 +1,12 @@
 # Luna release notes
 
+## 0.3.0 — 2026-09-13
+
+- Read formatted Markdown with headings, lists, tables, quotes, and code blocks. Switch between Preview and Edit with ⌘⇧M while preserving your text, cursor, and undo history.
+- See more files in a simpler sidebar: single-line names, unsaved-change dots, and full paths on hover, without repeated icons or file-type labels.
+- Browse files with ↑ and ↓ while focus stays in the sidebar. Press → or click the content to start editing; new notes are ready to type immediately.
+- Enjoy more room for files with Open File and Settings available through the menus and their familiar shortcuts.
+
 ## 0.2.1 — 2026-09-13
 
 - A new moonlit app icon pairs Luna’s cat silhouette with a softly shaded moon, midnight slate background, and mint note accent.
