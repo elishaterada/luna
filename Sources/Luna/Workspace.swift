@@ -534,6 +534,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         } catch { showError(error) }
     }
     @objc func applyPreferences() {
+        editor.currencyPreferencesChanged()
         NSApp.appearance = EditorPreferences.nsAppearance
         window?.appearance = EditorPreferences.nsAppearance
         windowFrost.applyAppearance()

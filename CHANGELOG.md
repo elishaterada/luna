@@ -1,5 +1,11 @@
 # Luna release notes
 
+## 0.6.0 — 2026-09-13
+
+- Convert currencies as you write, including `100,000 baht in USD =`, then press Tab to accept an approximate result. Rates are cached for 24 hours.
+- Currency conversion is off by default. Enable it in Settings → Editor, where Luna explains that lookups contact Frankfurter and send only currency codes—not amounts or note text. Turning it off cancels pending lookups.
+- See clearer terminal guidance with `luna notes.txt data.csv` and examples of the text-based files Luna can open.
+
 ## 0.5.0 — 2026-09-13
 
 - Calculate as you write: finish an expression with `=` to see a subtle inline result, press Tab to accept it, or Escape to dismiss. Accepted results support undo.

@@ -2,7 +2,53 @@ import AppKit
 
 final class EditorView: NSTextView {
     private var dismissedCalculation: String?
+    var exchangeRates = ExchangeRates.shared
+    private var currencyTask: Task<Void, Never>?
+    private var currencyPair: String?
+    private var currencyLoading = false
+    private var currencyHint: String?
+    func currencyPreferencesChanged() {
+        resetCurrencySuggestion()
+        if !EditorPreferences.currencyConversionEnabled { exchangeRates.cancelPendingRequests() }
+        needsDisplay = true
+    }
+    private func resetCurrencySuggestion() {
+        currencyTask?.cancel()
+        currencyTask = nil; currencyPair = nil; currencyLoading = false; currencyHint = nil
+        toolTip = nil
+    }
+    private func currencyResult(_ conversion: CurrencyConversion) -> String? {
+        guard EditorPreferences.currencyConversionEnabled else {
+            resetCurrencySuggestion()
+            currencyHint = "Enable currency conversion in Settings → Editor"
+            toolTip = "Currency conversion is off. Enabling it sends currency codes to Frankfurter, an external service."
+            return nil
+        }
+        if conversion.base == conversion.quote { return conversion.result(rate: 1) }
+        if let rate = exchangeRates.cached(conversion) {
+            toolTip = "Approximate reference rate · \(rate.date) · Frankfurter"
+            return conversion.result(rate: rate.rate)
+        }
+        if currencyPair != conversion.pair {
+            currencyTask?.cancel()
+            currencyPair = conversion.pair; currencyLoading = true
+            let rates = exchangeRates
+            currencyTask = Task { [weak self] in
+                // Wait for typing to settle; shared lookups coalesce across editor windows.
+                do { try await Task.sleep(nanoseconds: 300_000_000) } catch { return }
+                guard EditorPreferences.currencyConversionEnabled else { return }
+                _ = await rates.rate(for: conversion)
+                guard !Task.isCancelled, let self else { return }
+                self.currencyLoading = false
+                self.needsDisplay = true
+            }
+        }
+        currencyHint = currencyLoading ? "Fetching exchange rate…" : "Exchange rate unavailable"
+        toolTip = currencyHint
+        return nil
+    }
     var calculationSuggestion: String? {
+        currencyHint = nil
         let selection = selectedRange()
         guard isEditable, !hasMarkedText(), selection.length == 0 else { return nil }
         let source = string as NSString
@@ -13,6 +59,10 @@ final class EditorView: NSTextView {
         let line = before.components(separatedBy: .newlines).last ?? ""
         guard line.trimmingCharacters(in: .whitespaces).hasSuffix("="), line != dismissedCalculation,
               selection.location == source.length || CharacterSet.newlines.contains(UnicodeScalar(source.character(at: selection.location)) ?? " ") else { return nil }
+        if let conversion = CurrencyConversion.parse(line) {
+            guard let result = currencyResult(conversion) else { return nil }
+            return (line.last?.isWhitespace == true ? "" : " ") + result
+        }
         let lineStart = selection.location - (line as NSString).length
         let contextStart = max(0, lineStart - 32_768)
         var context = source.substring(with: NSRange(location: contextStart, length: lineStart - contextStart))
@@ -25,16 +75,18 @@ final class EditorView: NSTextView {
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting flag: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: flag)
+        resetCurrencySuggestion()
         dismissedCalculation = nil
         needsDisplay = true
     }
 
     override func cancelOperation(_ sender: Any?) {
-        if calculationSuggestion != nil {
+        if calculationSuggestion != nil || currencyHint != nil {
             let source = string as NSString
             let location = selectedRange().location
             let start = max(0, location - 1025)
             dismissedCalculation = source.substring(with: NSRange(location: start, length: location - start)).components(separatedBy: .newlines).last
+            resetCurrencySuggestion()
             needsDisplay = true
         } else { super.cancelOperation(sender) }
     }
@@ -67,17 +119,19 @@ final class EditorView: NSTextView {
         onMediaDrop(files, NSRange(location: position, length: 0)); return true
     }
 
-    override var string: String { didSet { needsDisplay = true } }
+    override var string: String { didSet { resetCurrencySuggestion(); needsDisplay = true } }
     override func didChangeText() {
         super.didChangeText()
         dismissedCalculation = nil
+        resetCurrencySuggestion()
         // TextKit redraws glyphs independently; invalidate our empty-state drawing too.
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        if let suggestion = calculationSuggestion, let window, window.firstResponder === self {
+        let suggestion = calculationSuggestion
+        if let suggestion = suggestion ?? currencyHint.map({ " " + $0 }), let window, window.firstResponder === self {
             let caret = firstRect(forCharacterRange: selectedRange(), actualRange: nil)
             let rect = convert(window.convertFromScreen(caret), from: nil)
             let suggestionFont = font ?? NSFont.monospacedSystemFont(ofSize: 18, weight: .regular)

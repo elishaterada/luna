@@ -84,6 +84,7 @@ private struct LunaSettingsView: View {
     @AppStorage("editor.syntaxColors") private var syntaxColors = true
     @AppStorage("editor.spellChecking") private var spellChecking = false
     @AppStorage("editor.useTabs") private var useTabs = false
+    @AppStorage(EditorPreferences.currencyConversionKey) private var currencyConversion = false
 
     var body: some View {
         NavigationSplitView {
@@ -123,6 +124,7 @@ private struct LunaSettingsView: View {
         .onChange(of: syntaxColors) { EditorPreferences.notify() }
         .onChange(of: spellChecking) { EditorPreferences.notify() }
         .onChange(of: tabWidth) { EditorPreferences.notify() }
+        .onChange(of: currencyConversion) { EditorPreferences.notify() }
 
     }
 
@@ -162,6 +164,14 @@ private struct LunaSettingsView: View {
         }
     }
     @ViewBuilder private var editorSections: some View {
+        Section("Currency conversion") {
+            Toggle("Enable online currency conversion", isOn: $currencyConversion)
+            Text("Off by default. When enabled, currency expressions such as ‘100,000 baht in USD =’ make API requests to Frankfurter, an external exchange-rate service (api.frankfurter.dev).")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("Only the currency codes are sent—not your amount or note text. Rates are cached for 24 hours and results are approximate. Turn this off to stop currency lookups; ordinary calculations work offline.")
+                .font(.caption).foregroundStyle(.secondary)
+            Link("About Frankfurter", destination: URL(string: "https://frankfurter.dev/")!)
+        }
         Section("Typing") {
             Toggle("Continue indentation on Return", isOn: $autoIndent)
             Toggle("Insert a tab character instead of spaces", isOn: $useTabs)
@@ -192,8 +202,8 @@ private struct LunaSettingsView: View {
     }
     @ViewBuilder private var commandSections: some View {
         Section("Open from your terminal") {
-            Text("luna ~/.zshrc").font(.system(size: 20, design: .monospaced)).foregroundStyle(Color(nsColor: Theme.mint)).textSelection(.enabled)
-            Text("Open one file or several, straight from Sora or any terminal.").foregroundStyle(.secondary)
+            Text("luna notes.txt data.csv").font(.system(size: 20, design: .monospaced)).foregroundStyle(Color(nsColor: Theme.mint)).textSelection(.enabled)
+            Text("Open any text-based file—notes, CSV data, JSON, Markdown, or source code—from any terminal. Pass one file path or several.").foregroundStyle(.secondary)
             Label(model.installed ? "Command installed" : "Command not installed", systemImage: model.installed ? "checkmark.circle" : "terminal")
         }
         Section("Installation") {

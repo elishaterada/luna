@@ -10,6 +10,8 @@ enum EditorPreferences {
         }
     }
     static let changed = Notification.Name("Luna.editorPreferencesChanged")
+    static let currencyConversionKey = "editor.currencyConversionEnabled"
+    static var currencyConversionEnabled: Bool { UserDefaults.standard.bool(forKey: currencyConversionKey) }
     static var appearance: String { UserDefaults.standard.string(forKey: "editor.appearance") ?? "dark" }
     static var fontFamily: String { UserDefaults.standard.string(forKey: "editor.fontFamily") ?? "SF Mono" }
     static var fontSize: CGFloat {
