@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.3.1 — 2026-09-13
+
+- Spot Luna more easily in the Dock with a larger full-body cat and a simpler moonlit icon, paired with Sora’s matching design.
+
 ## 0.3.0 — 2026-09-13
 
 - Read formatted Markdown with headings, lists, tables, quotes, and code blocks. Switch between Preview and Edit with ⌘⇧M while preserving your text, cursor, and undo history.
