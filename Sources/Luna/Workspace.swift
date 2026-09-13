@@ -229,6 +229,11 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             line.heightAnchor.constraint(equalToConstant: 1), dividerInset, dividerTrailing, line.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -16),
             footerInset, footerTrailing, footer.bottomAnchor.constraint(equalTo: main.bottomAnchor, constant: -20), footer.heightAnchor.constraint(equalToConstant: 32)
         ])
+        markdownPreview.onTaskToggle = { [weak self] source, range, replacement in
+            guard let self, self.previewing, self.editor.string == source else { return false }
+            self.editor.insertText(replacement, replacementRange: range)
+            return self.editor.string == (source as NSString).replacingCharacters(in: range, with: replacement)
+        }
         markdownPreview.translatesAutoresizingMaskIntoConstraints = false
         markdownPreview.isHidden = true
         main.addSubview(markdownPreview)

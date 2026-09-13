@@ -163,14 +163,14 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
                     if item.mediaType.hasPrefix("image/") { content = "<img src=\"\(url)\" alt=\"\(label)\">" }
                     else if item.mediaType.hasPrefix("audio/") { content = "<audio controls preload=\"metadata\" src=\"\(url)\"></audio>" }
                     else { content = "<video controls playsinline preload=\"metadata\" src=\"\(url)\"></video>" }
-                    html += "<figure data-block data-source=\"\(escape(source))\">\(content)<figcaption>\(label)</figcaption><button class=\"remove\" aria-label=\"Remove attachment\">×</button></figure>"
+                    html += "<figure data-block data-source=\"\(escape(source))\">\(content)<figcaption>\(label)</figcaption><button class=\"remove\" aria-label=\"Remove attachment\"></button></figure>"
                 } else {
-                    html += "<figure data-block data-source=\"\(escape(source))\">Attachment unavailable<button class=\"remove\" aria-label=\"Remove attachment\">×</button></figure>"
+                    html += "<figure data-block data-source=\"\(escape(source))\">Attachment unavailable<button class=\"remove\" aria-label=\"Remove attachment\"></button></figure>"
                 }
             case .embed(let source, let url):
                 let value = escape(url.absoluteString)
                 html += """
-                <figure data-block data-source="\(escape(source))"><iframe data-embed="\(embedIndex)" src="\(value)" title="\(escape(url.host ?? "Embedded content"))" sandbox="allow-scripts allow-same-origin allow-presentation" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe><figcaption><a href="\(value)" target="_blank">\(escape(url.host ?? "Open original")) ↗</a><span> · Open the original if this site cannot be embedded</span></figcaption><button class="remove" aria-label="Remove embed">×</button></figure>
+                <figure data-block data-source="\(escape(source))"><iframe data-embed="\(embedIndex)" src="\(value)" title="\(escape(url.host ?? "Embedded content"))" sandbox="allow-scripts allow-same-origin allow-presentation" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe><figcaption><a href="\(value)" target="_blank">\(escape(url.host ?? "Open original")) ↗</a><span> · Open the original if this site cannot be embedded</span></figcaption><button class="remove" aria-label="Remove embed"></button></figure>
                 """
                 embedIndex += 1
             }
@@ -189,7 +189,9 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
         .text:empty:not(:focus):not(:last-child):before {content:none;}
         figure {position:relative;margin:20px 0;padding:0;} img,video {display:block;max-width:100%;max-height:580px;border-radius:8px;}
         audio {width:100%;} iframe {display:block;width:100%;height:380px;border:1px solid #8883;border-radius:8px;background:#fff;}
-        figcaption {font-size:11px;opacity:.7;margin-top:6px;overflow-wrap:anywhere;} a {color:inherit;} .remove {position:absolute;right:8px;top:8px;border:0;border-radius:50%;width:26px;height:26px;background:#222c;color:white;font-size:20px;cursor:pointer;opacity:0;}
+        figcaption {font-size:11px;opacity:.7;margin-top:6px;overflow-wrap:anywhere;} a {color:inherit;} .remove {position:absolute;right:8px;top:8px;border:0;border-radius:50%;width:26px;height:26px;background:#222c;color:white;padding:0;box-sizing:border-box;appearance:none;cursor:pointer;opacity:0;}
+        .remove::before,.remove::after {content:'';position:absolute;left:50%;top:50%;width:13px;height:2px;background:currentColor;border-radius:1px;pointer-events:none;transform:translate(-50%,-50%) rotate(45deg);}
+        .remove::after {transform:translate(-50%,-50%) rotate(-45deg);}
         figure:hover .remove, .remove:focus-visible {opacity:1;} ::selection {background:#19f9d838;}
         </style></head><body><article>\(html)</article>
         <script nonce="\(pageID)">

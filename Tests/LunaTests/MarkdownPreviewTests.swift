@@ -29,6 +29,68 @@ final class MarkdownPreviewTests: XCTestCase {
             XCTAssertTrue(html.contains(fragment), fragment)
         }
     }
+    func testShorthandTaskRows() throws {
+        let html = try MarkdownRenderer.body("# Tasks\n\n[x] Done\n[] **Next**\n[ ] Later\n[X] Finished\n\n- [] Listed\n- [ ] Standard")
+        XCTAssertEqual(html.components(separatedBy: "type=\"checkbox\"").count - 1, 6)
+        XCTAssertEqual(html.components(separatedBy: "checked=\"\"").count - 1, 2)
+        XCTAssertTrue(html.contains("<strong>Next</strong>"))
+        XCTAssertFalse(html.contains("[] Listed"))
+    }
+
+    func testTaskShorthandPreservesCodeAndInlineBrackets() throws {
+        let html = try MarkdownRenderer.body("```text\n[] Code\n[x] Code\n```\n\n    [] Indented\n\nUse [] in prose and `[] inline`.\n\n[] <script>alert(1)</script>")
+        XCTAssertEqual(html.components(separatedBy: "type=\"checkbox\"").count - 1, 1)
+        XCTAssertTrue(html.contains("[] Code"))
+        XCTAssertTrue(html.contains("[] Indented"))
+        XCTAssertTrue(html.contains("<code>[] inline</code>"))
+        XCTAssertFalse(html.contains("<script>"))
+    }
+
+    func testTaskSourcePositionsExcludeCodeAndHandleUnicodeAndNesting() throws {
+        let source = "🌙\n\n```\n[] Code\n```\n\n[] Same\n- [x] Same\n  - [] Nested\n\n> [ ] Quoted"
+        let html = try MarkdownRenderer.body(source)
+        XCTAssertEqual(html.components(separatedBy: "data-task-start=").count - 1, 4)
+        XCTAssertFalse(html.contains("LUNATASK"))
+        for label in ["[] Same", "[x] Same", "[] Nested", "[ ] Quoted"] {
+            let location = (source as NSString).range(of: label).location
+            XCTAssertTrue(html.contains("data-task-start=\"\(location)\""), html)
+        }
+    }
+
+    @MainActor func testClickingPreviewTasksPersistsAndSupportsUndo() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
+                                  skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        let note = Note(text: "🌙\n\n[] First\n[] Second", language: "Markdown")
+        workspace.notes.append(note)
+        workspace.reloadShelf(); workspace.select(note.id)
+        workspace.toggleMarkdownPreview()
+        let preview = workspace.markdownPreview
+        for _ in 0..<100 {
+            if let count = try? await preview.evaluateJavaScript("document.querySelectorAll('input[data-task-start]').length") as? Int, count == 2 { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let count = try await preview.evaluateJavaScript("document.querySelectorAll('input[data-task-start]').length") as? Int
+        XCTAssertEqual(count, 2)
+        for (index, expected) in [(0, "🌙\n\n[x] First\n[] Second"), (1, "🌙\n\n[x] First\n[x] Second"), (0, "🌙\n\n[ ] First\n[x] Second")] {
+            _ = try await preview.evaluateJavaScript("document.querySelectorAll('input[data-task-start]')[\(index)].click(); true")
+            for _ in 0..<100 {
+                if workspace.editor.string == expected { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            XCTAssertEqual(workspace.editor.string, expected)
+        }
+        XCTAssertTrue(workspace.flushRecovery())
+        XCTAssertEqual(try workspace.store.load().first(where: { $0.id == note.id })?.text, workspace.editor.string)
+        workspace.toggleMarkdownPreview()
+        XCTAssertTrue(workspace.editor.undoManager?.canUndo == true)
+        workspace.editor.undoManager?.undo()
+        XCTAssertNotEqual(workspace.editor.string, "🌙\n\n[ ] First\n[x] Second")
+    }
+
     func testRawHTMLAndImagesCannotInjectActiveContent() throws {
         let html = try MarkdownRenderer.body("""
         <script>alert('x')</script>

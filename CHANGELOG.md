@@ -1,5 +1,11 @@
 # Luna release notes
 
+## 0.4.1 — 2026-09-13
+
+- Click Markdown preview checkboxes to mark tasks complete or incomplete. Changes update the source, support undo, and are kept in local recovery; use ⌘S to save opened files.
+- Render task lines written with `[]`, `[ ]`, or `[x]`, including tasks without a leading list bullet.
+- Keep attachment and embed close icons centered within their circular buttons.
+
 ## 0.4.0 — 2026-09-13
 
 - Drag notes into your preferred sidebar order and pin favorites at the top. Your arrangement survives restarting Luna.
