@@ -1,0 +1,35 @@
+[
+  {
+    "app_initialization_ms": 227.5941667612642,
+    "edit_10mb_ms": 10.866333381272852,
+    "first_runloop_ms": 318.8593334052712,
+    "highlight_viewport_ms": 1.8393333302810788,
+    "install_10mb_ms": 6.825124961324036,
+    "recovery_10mb_ms": 219.12287501618266,
+    "scroll_to_end_10mb_ms": 0.5122916772961617,
+    "textkit2_active": 1,
+    "whole_benchmark_process_ms": 1024.636208
+  },
+  {
+    "app_initialization_ms": 276.6569999512285,
+    "edit_10mb_ms": 6.916708312928677,
+    "first_runloop_ms": 356.1839583562687,
+    "highlight_viewport_ms": 1.1999165872111917,
+    "install_10mb_ms": 4.4458332704380155,
+    "recovery_10mb_ms": 219.04504171106964,
+    "scroll_to_end_10mb_ms": 0.4639166872948408,
+    "textkit2_active": 1,
+    "whole_benchmark_process_ms": 1033.305875
+  },
+  {
+    "app_initialization_ms": 173.74566674698144,
+    "edit_10mb_ms": 7.61154165957123,
+    "first_runloop_ms": 237.7030000789091,
+    "highlight_viewport_ms": 1.2162916827946901,
+    "install_10mb_ms": 4.28587500937283,
+    "recovery_10mb_ms": 217.15537493582815,
+    "scroll_to_end_10mb_ms": 0.4870416596531868,
+    "textkit2_active": 1,
+    "whole_benchmark_process_ms": 910.5625419999997
+  }
+]

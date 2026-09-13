@@ -1,0 +1,26 @@
+name: Build and test
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          if [[ -d /Applications/Xcode_26.6.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          fi
+          xcodebuild -version
+      - run: swift test
+      - run: python3 -m unittest discover -s Tests/ReleaseTests -v
+      - run: Scripts/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luna-build
+          path: dist/Luna.app/Contents/Info.plist

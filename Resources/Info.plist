@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Luna</string>
+	<key>CFBundleDisplayName</key>
+	<string>Luna</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.luna.app</string>
+	<key>CFBundleExecutable</key>
+	<string>Luna</string>
+	<key>CFBundleIconFile</key>
+	<string>Luna</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Luna — a little space to think.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Text document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.text</string>
+				<string>public.source-code</string>
+				<string>public.json</string>
+				<string>public.yaml</string>
+				<string>public.shell-script</string>
+			</array>
+		</dict>
+	</array>
+	<key>SUFeedURL</key>
+	<string>https://github.com/elishaterada/luna/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>ghy5uwNZVawvVfGZ927htqrBn06yR6nMI5mhI1J6ASg=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+</dict>
+</plist>

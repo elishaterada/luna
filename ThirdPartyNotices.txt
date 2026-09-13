@@ -1,0 +1,7 @@
+Luna includes Sparkle 2.9.6, the macOS software update framework.
+https://sparkle-project.org/
+https://github.com/sparkle-project/Sparkle
+
+The complete Sparkle license is included in Luna.app/Contents/Resources/Sparkle-LICENSE.txt
+and beside the app in release archives. It contains the applicable copyright notices
+and licenses for Sparkle and its bundled third-party components.

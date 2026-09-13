@@ -1,0 +1,74 @@
+name: Release Luna
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing stable version tag (e.g. v0.1.0)'
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: luna-stable-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Validate tag
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+      - name: Select Xcode
+        run: |
+          if [[ -d /Applications/Xcode_26.6.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          fi
+          xcodebuild -version
+          [[ "$(uname -m)" == arm64 ]]
+      - name: Validate release and assign build
+        run: |
+          set -euo pipefail
+          git show-ref --verify "refs/tags/$RELEASE_TAG"
+          git merge-base --is-ancestor HEAD origin/main
+          python3 Scripts/release.py "${RELEASE_TAG#v}" --notes-only
+          python3 Scripts/release.py "${RELEASE_TAG#v}" --check-order
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'This release already exists. Publish a new version; never replace signed archives.' >&2
+            exit 1
+          fi
+          echo "RELEASE_BUILD=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_ENV"
+      - run: swift test
+      - run: python3 -m unittest discover -s Tests/ReleaseTests -v
+      - name: Package and sign updates
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          test -n "$SPARKLE_ED_PRIVATE_KEY" || { echo 'Missing SPARKLE_ED_PRIVATE_KEY secret'; exit 1; }
+          python3 Scripts/release.py "${RELEASE_TAG#v}" --build "$RELEASE_BUILD"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luna-${{ env.RELEASE_TAG }}-${{ env.RELEASE_BUILD }}
+          path: |
+            dist/*.zip
+            dist/appcast.xml
+            dist/release-notes.md
+          if-no-files-found: error
+      - name: Publish GitHub release
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" dist/*.zip dist/appcast.xml \
+            --verify-tag --draft --title "Luna ${RELEASE_TAG#v}" --notes-file dist/release-notes.md
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+      - name: Verify public downloads
+        run: |
+          set -euo pipefail
+          python3 Scripts/verify-release.py "$RELEASE_TAG" "$RELEASE_BUILD"

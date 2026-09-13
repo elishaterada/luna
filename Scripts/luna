@@ -1,0 +1,16 @@
+#!/bin/zsh
+set -euo pipefail
+# LUNA_APP can point to a development build; otherwise use the installed app.
+app_path="${LUNA_APP:-/Applications/Luna.app}"
+if [[ ! -d "$app_path" ]]; then
+  app_path="${0:A:h:h}/dist/Luna.app"
+fi
+if [[ ! -d "$app_path" ]]; then
+  echo "Build Luna with Scripts/build.sh, or install Luna.app in /Applications." >&2
+  exit 1
+fi
+if (( $# == 0 )); then
+  open "$app_path"
+else
+  open -a "$app_path" -- "$@"
+fi
