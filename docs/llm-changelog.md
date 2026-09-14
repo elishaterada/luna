@@ -14,7 +14,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** All 12 rewritten historical revisions contain no README and no matching personal label. The new README and guide use generic samples. Release source trees differ only in removal of README and the fixture label. Current documentation links resolve; all 9 calculation tests passed after building the sanitized source.
 
-**Status:** Prepared for history replacement on GitHub main and all 11 release tags. Server verification follows. Old commit caches and independent clones are outside a Git push’s control; GitHub Support may need to remove cached views. Historical commit hashes mentioned in earlier log entries refer to pre-cleanup history.
+**Status:** Atomically force-updated GitHub main and all 11 release tags with explicit leases, then verified every remote ref. Temporarily paused and restored both workflows to avoid triggering release jobs. Published release asset IDs and metadata remain unchanged. GitHub still serves removed README versions by old commit ID, confirmed through its API; a GitHub Support sensitive-data purge is still required. Independent clones cannot be recalled. Historical commit hashes mentioned in earlier log entries refer to pre-cleanup history.
 
 ## 2026-09-13 — Hero screenshot recapture only
 
