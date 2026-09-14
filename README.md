@@ -91,4 +91,14 @@ open dist/Luna.app
 
 Run tests with `swift test`, or open `Package.swift` in Xcode.
 
+## License
+
+Luna’s original code and documentation are copyright © 2026 Elisha Terada and available under the [MIT License](LICENSE). Third-party components retain their own licenses and copyright notices; see [Third-party notices](ThirdPartyNotices.txt), including Sparkle and Marked.
+
+## Support Luna
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-Support_Luna-FFDD00?style=flat&logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/elishaterada)
+
+Luna is fully usable for free. Optional contributions help cover Apple Developer membership and AI-assisted maintenance costs. Support is voluntary and does not unlock features or include priority support.
+
 Read the [full user guide](docs/user-guide.md) for calculations, media, skins, shortcuts, and file handling. For development, see [measured performance](docs/performance.md), [design notes](docs/design-cohesion.md), [implementation history](docs/llm-changelog.md), and the [release runbook](docs/releasing.md).

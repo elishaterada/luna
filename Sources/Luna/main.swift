@@ -37,6 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { workspace.showWindow(nil); return true }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply { workspace == nil || workspace.flushAllRecovery() ? .terminateNow : .terminateCancel }
     @objc func showSettings() { commandSettings.showWindow(nil) }
+    @objc func buyMeACoffee() {
+        NSWorkspace.shared.open(URL(string: "https://buymeacoffee.com/elishaterada")!)
+    }
     func buildMenu() {
         let menu = NSMenu()
         func submenu(_ title: String) -> NSMenu { let item = NSMenuItem(); item.title = title; let sub = NSMenu(title: title); item.submenu = sub; menu.addItem(item); return sub }
@@ -48,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item(app, "Check for Updates…", #selector(UpdateController.checkForUpdates(_:)), target: updates)
         item(app, "Automatically Check for Updates", #selector(UpdateController.toggleAutomaticChecks(_:)), target: updates)
         item(app, "Settings…", #selector(showSettings), ",", target: self)
+        item(app, "Buy Me a Coffee", #selector(buyMeACoffee), target: self)
         app.addItem(.separator()); item(app, "Hide Luna", #selector(NSApplication.hide(_:)), "h", target: NSApp)
         item(app, "Quit Luna", #selector(NSApplication.terminate(_:)), "q", target: NSApp)
         let file = submenu("File")

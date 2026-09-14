@@ -2,6 +2,56 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-09-14 — Release 0.7.1 licensing and voluntary support
+
+**Request:** User approved the direct menu support item and authorized publication.
+
+**Implementation:** Versioned the MIT licensing, bundled license notices, README badge, Settings → About support page, and direct Luna → Buy Me a Coffee item as 0.7.1. Preserved all third-party license notices and free app functionality. Includes the instruction to open updated builds for review.
+
+**Preflight:** All 71 Swift tests and 4 release-tool tests passed. Stable version-order check and `Scripts/build.sh` passed, including nested signing verification. The changed menu was exercised in the preceding entry. `git diff --check` passed.
+
+**Release status:** Publication authorized; tag/workflow and public-download/update verification pending. This entry will be updated with the actual outcome.
+
+## 2026-09-14 — Direct support item in the Luna menu
+
+**Follow-up request:** Make Buy Me a Coffee accessible in the app menu shown in the user's screenshot instead of requiring navigation into Settings.
+
+**Implementation:** `Sources/Luna/main.swift` adds “Buy Me a Coffee” directly below Settings, targeting an app-delegate action that opens the confirmed https://buymeacoffee.com/elishaterada URL in the default browser. Existing Settings → About and README links remain available. Updated unreleased highlights in `CHANGELOG.md`.
+
+**Verification:** Built the development app through `Scripts/build.sh`; compilation and nested signing verification passed. Gracefully quit and reopened Luna, confirmed the executable runs from this worktree, and opened the Luna menu. macOS accessibility reports “Buy Me a Coffee” present and enabled. Reviewed the action's exact destination; no payment interaction performed. `git diff --check` passed.
+
+**Release status:** Updated local app opened for user review. Not committed, pushed, or released.
+
+## 2026-09-14 — Open updated builds for user review
+
+**Follow-up correction:** The user requested opening the app after every update. Added this preference to `AGENTS.md`, including preserving notes on relaunch and confirming the current-worktree build.
+
+**Verification:** Built `dist/Luna.app` with `LUNA_DEVELOPMENT_BUILD=1`; build and nested code-signature verification passed. Confirmed bundled Luna license and third-party notices match the source files byte-for-byte. Gracefully quit the previously running app, opened this worktree's app, and confirmed its running executable path. Invoked the Settings menu for review; did not verify the About screen visually. `git diff --check` passed.
+
+**Release status:** Local development app opened for review; nothing pushed or released.
+
+## 2026-09-14 — Confirmed Buy Me a Coffee support links
+
+**Follow-up request:** The user supplied and confirmed https://buymeacoffee.com/elishaterada as the public donation destination, resolving the account clarification in the previous entry.
+
+**Implementation:** Added a modest linked Buy Me a Coffee badge under `README.md` → Support Luna. Added Settings → About in `Sources/Luna/CommandLineSettings.swift` with a native browser link and wording that Luna is fully usable for free, contributions help cover Apple Developer membership and AI-assisted maintenance, and support provides no feature unlocks or priority support. Updated `CHANGELOG.md` unreleased highlights. No automatic requests to the donation service are introduced in the app; the native link opens on user action.
+
+**Verification:** `swift build` completed successfully and `git diff --check` passed. The exact user-provided URL returned HTTP 200 through a direct HTTP check after the web browsing tool could not open it. Reviewed the settings switch and link target. No payment was attempted; the native settings screen was not visually exercised. The README badge uses Shields.io with accessible link text.
+
+**Release status:** Implemented locally; not committed, pushed, merged, or released. Donation URL clarification is resolved. Prior MIT and packaging changes remain in this worktree; no release archive was produced.
+
+## 2026-09-14 — MIT licensing and voluntary support preparation
+
+**Request:** License user-owned original code under MIT and add optional support, preferably Buy Me a Coffee, to help cover Apple Developer membership and AI-assisted maintenance. Keep Luna fully usable for free; no Pro implementation or publication authorized.
+
+**Implementation:** Added the standard MIT text in `LICENSE`, attributed to Elisha Terada (2026). `README.md` scopes that license to original code and documentation, links the separate third-party notices, and explains voluntary support without feature gating or priority-support promises. `ThirdPartyNotices.txt` explicitly preserves component licenses. `Scripts/build.sh` now copies Luna's license and third-party notices into the app before signing, so future packaged apps carry them. Added unreleased highlights in `CHANGELOG.md`.
+
+**Provenance review:** All 14 commits in the available all-ref history name Elisha Terada as author and committer; no co-author trailers were found. The repository remote is elishaterada/luna. Eight source files explicitly identify their Sora origin as user-owned, consistent with the user's authorization. Reviewed tracked source/resource inventory, dependency manifest and lockfile, attribution markers, and packaging paths. Sparkle 2.9.6 is the sole Swift package dependency; Marked 17.0.1 is vendored with its existing license, including its additional notice. Existing Marked and Sparkle license files/copy paths remain unchanged. No additional outside contribution was identified in this review. This is repository-evidence review, not an exhaustive external code comparison or independent ownership audit. MIT text checked against https://opensource.org/license/mit.
+
+**Verification:** `zsh -n Scripts/build.sh`, all 4 existing release-tool tests, and `git diff --check` passed. No application behavior changed; no full app build or release archive was produced. Future license inclusion was inspected in the build script, not verified in a built artifact.
+
+**Pending and release status:** Asked for the verified public donation URL; none has been supplied. No payment destination, placeholder button, account, or in-app support link was added. Once confirmed, add a tasteful README button and an appropriate About/settings link, then verify the destination and app change. Changes are local, uncommitted, not pushed, merged, or released; existing published binaries are unchanged. Future proprietary additions remain outside this request.
+
 
 
 

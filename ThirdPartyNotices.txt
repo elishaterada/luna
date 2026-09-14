@@ -1,3 +1,8 @@
+Luna's original code and documentation are licensed under the MIT License
+(see LICENSE in the source repository or Luna-LICENSE.txt in the app).
+Third-party components retain their own licenses and copyright notices below;
+Luna's license does not replace or relicense them.
+
 Luna includes Sparkle 2.9.6, the macOS software update framework.
 https://sparkle-project.org/
 https://github.com/sparkle-project/Sparkle

@@ -34,10 +34,10 @@ final class CommandLineSettings: NSWindowController {
 
 private final class SettingsModel: ObservableObject {
     enum Page: String, CaseIterable, Identifiable {
-        case appearance = "Appearance", skins = "Skins", editor = "Editor", commandLine = "Command Line", shortcuts = "Shortcuts"
+        case appearance = "Appearance", skins = "Skins", editor = "Editor", commandLine = "Command Line", shortcuts = "Shortcuts", about = "About"
         var id: String { rawValue }
         var icon: String {
-            switch self { case .appearance: return "circle.lefthalf.filled"; case .skins: return "photo.on.rectangle.angled"; case .editor: return "text.cursor"; case .commandLine: return "terminal"; case .shortcuts: return "keyboard" }
+            switch self { case .appearance: return "circle.lefthalf.filled"; case .skins: return "photo.on.rectangle.angled"; case .editor: return "text.cursor"; case .commandLine: return "terminal"; case .shortcuts: return "keyboard"; case .about: return "info.circle" }
         }
     }
     @Published var page: Page? = .appearance
@@ -104,6 +104,7 @@ private struct LunaSettingsView: View {
                 case .editor: editorSections
                 case .commandLine: commandSections
                 case .shortcuts: shortcutSections
+                case .about: aboutSections
                 case .skins: EmptyView()
                 }
             }
@@ -126,6 +127,22 @@ private struct LunaSettingsView: View {
         .onChange(of: tabWidth) { EditorPreferences.notify() }
         .onChange(of: currencyConversion) { EditorPreferences.notify() }
 
+    }
+
+    @ViewBuilder private var aboutSections: some View {
+        Section("Luna") {
+            Text("A little space to think.")
+            Text("Luna is fully usable for free.")
+        }
+        Section("Support Luna") {
+            Text("Optional contributions help cover Apple Developer membership and AI-assisted maintenance costs. Support does not unlock features or include priority support.")
+                .foregroundStyle(.secondary)
+            Link(destination: URL(string: "https://buymeacoffee.com/elishaterada")!) {
+                Label("Buy Me a Coffee", systemImage: "cup.and.saucer")
+            }
+            Text("Opens Buy Me a Coffee in your browser.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder private var appearanceSections: some View {

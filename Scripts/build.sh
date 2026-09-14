@@ -16,6 +16,8 @@ fi
 if [[ -f Resources/Luna.icns ]]; then cp Resources/Luna.icns "$APP/Contents/Resources/Luna.icns"; fi
 ditto "$SPARKLE/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 cp "$SPARKLE/LICENSE" "$APP/Contents/Resources/Sparkle-LICENSE.txt"
+cp LICENSE "$APP/Contents/Resources/Luna-LICENSE.txt"
+cp ThirdPartyNotices.txt "$APP/Contents/Resources/ThirdPartyNotices.txt"
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 # Sign nested code inside-out, retaining Sparkle's required helper entitlements.
 for component in "$FRAMEWORK"/Versions/B/XPCServices/*.xpc "$FRAMEWORK/Versions/B/Updater.app" "$FRAMEWORK/Versions/B/Autoupdate"; do

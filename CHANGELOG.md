@@ -1,5 +1,10 @@
 # Luna release notes
 
+## 0.7.1 — 2026-09-14
+
+- Luna’s original code and documentation are now available under the MIT License. Third-party components retain their existing licenses.
+- Support Luna voluntarily through Buy Me a Coffee directly in the Luna app menu, in Settings → About, or in the README. Luna remains fully usable for free; contributions help cover Apple Developer membership and AI-assisted maintenance costs.
+
 ## 0.7.0 — 2026-09-13
 
 - Write bulleted, numbered, and checkbox lists directly in notes. Return continues the list; Return on an empty item ends it.
