@@ -2,6 +2,16 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-09-14 — README desktop screenshots and demo
+
+**Request:** Use the newly captured portfolio assets in README.md and push the update.
+
+**Result:** Replaced the README hero, Markdown, and presentation images with the refreshed desktop captures. Added an accepted-answer image and a clickable video poster linking to the 18-second silent H.264 recording. Copied all six assets unchanged into `docs/screenshots/desktop/` so repository links are self-contained. Documented native 2674 × 1780 resolution, 57.75 fps average variable timing, isolated fictional 0.7.0 demo provenance, and the visible native capture indicator.
+
+**Verification:** All README local links resolve; SHA-256 comparisons confirm every copied asset matches the reviewed portfolio original. The previous capture task reviewed all four screenshots, poster, and the complete 1,040-frame recording. `git diff --check` passed. No app behavior changed, so application tests were not rerun.
+
+**Publication:** Prepared on top of origin/main after the 0.7.1 release commits, with unrelated local work preserved in the original checkout. Documentation-only push; no version tag, application release, or portfolio website deployment.
+
 ## 2026-09-14 — Release 0.7.1 licensing and voluntary support
 
 **Request:** User approved the direct menu support item and authorized publication.

@@ -4,7 +4,7 @@
 
 <p align="center"><a href="https://github.com/elishaterada/luna/releases/latest">Download Luna</a> · <a href="docs/user-guide.md">User guide</a> · <a href="CHANGELOG.md">What’s new</a></p>
 
-![Luna showing a scratch note and a simple notes shelf](docs/screenshots/luna-notes-desktop.png)
+![Luna’s translucent window over a blue desktop, showing a workshop plan and an inline $144 calculation suggestion](docs/screenshots/desktop/01-calculation-suggestion.webp)
 
 An idea arrives before it has a filename. A plan needs a few numbers. A conversation needs a page everyone can read. Luna gives you a comfortable place for all three—and opens the text files you already work with.
 
@@ -18,19 +18,29 @@ An idea arrives before it has a filename. A plan needs a few numbers. A conversa
 - **Make the space yours.** Choose fonts, spacing, light or dark appearance, and photo or video skins. Optional typing sounds and visual effects add a little personality.
 - **Feel at home on the Mac.** Built with AppKit and TextKit 2, with native find and replace, undo, keyboard shortcuts, and macOS window materials.
 
+## Calculate without leaving the note
+
+Name your inputs, type an expression ending in `=`, and press Tab to accept the suggestion as ordinary text.
+
+![Workshop calculation after Tab accepts $144 as ordinary text](docs/screenshots/desktop/02-accepted-answer.webp)
+
+[![Watch Luna calculate, accept an answer, enter presentation mode, and return to editing](docs/screenshots/desktop/06-video-poster.webp)](docs/screenshots/desktop/05-calculation-to-presentation.mp4)
+
+[Watch the 18-second silent demo](docs/screenshots/desktop/05-calculation-to-presentation.mp4): enter the calculation → accept with Tab → present → return to editing.
+
 ## Write, then read beautifully
 
 Keep the source close and switch to a formatted Markdown preview with ⌘⇧M. Headings, lists, quotes, tables, and code blocks become easy to scan; task checkboxes can update the source directly.
 
-![Luna rendering a sample weekend note in Markdown preview](docs/screenshots/luna-markdown.jpg)
+![Luna previewing a workshop guide with a checklist, complete materials table, and quotation over the blue desktop](docs/screenshots/desktop/04-markdown-preview.webp)
 
 ## Make room for the big picture
 
 One shortcut turns your working note into a larger, cleaner view for a conversation or screen share. Exit presentation mode to return to your previous notes-shelf setting.
 
-![Luna presentation mode with larger text and the notes shelf hidden](docs/screenshots/luna-presentation.jpg)
+![Luna presentation mode with larger text and the notes shelf hidden](docs/screenshots/desktop/03-presentation.webp)
 
-*Actual Luna 0.7.0 screenshots on macOS, captured against the desktop wallpaper with sample notes in a separate workspace and padding around each window. Window materials vary with your system and accessibility settings.*
+*Actual Luna 0.7.0 demo captured on September 14, 2026, using fictional workshop notes in an isolated workspace. Screenshots and video retain native 2674 × 1780 resolution, desktop-composited glass, and window shadows. The silent video averages 57.75 fps with variable frame timing; no upscaling or interpolation. The macOS capture indicator remains visible. Window materials vary with your system and accessibility settings.*
 
 ## How Luna compares
 
