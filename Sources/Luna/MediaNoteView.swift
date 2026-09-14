@@ -44,6 +44,7 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
     private var lastSize: CGFloat = 0
     private var lastDark = false
     private var pageID = UUID().uuidString
+    private var metadataTask: Task<Void, Never>?
     private var resolutionTask: Task<Void, Never>?
 
     init() {
@@ -65,6 +66,7 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
     func show(_ note: Note, store: RecoveryStore, fontSize: CGFloat, appearance: NSAppearance) {
         let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         guard lastSource != note.text || lastID != note.id || lastSize != fontSize || lastDark != dark else { return }
+        metadataTask?.cancel()
         resolutionTask?.cancel()
         lastSource = note.text; lastID = note.id; lastSize = fontSize; lastDark = dark
         pageID = UUID().uuidString
@@ -74,6 +76,7 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
         loadHTMLString(Self.page(note, fontSize: fontSize, dark: dark, pageID: pageID), baseURL: URL(string: "https://luna.invalid"))
     }
     func suspend() {
+        metadataTask?.cancel()
         resolutionTask?.cancel()
         lastSource = nil
         loadHTMLString("", baseURL: nil)
@@ -86,7 +89,14 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
     }
     fileprivate func receive(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let body = message.body as? [String: String],
-              body["page"] == pageID, let source = body["source"], source.utf8.count <= 2_000_000 else { return }
+              body["page"] == pageID else { return }
+        if body["kind"] == "paste", let value = body["value"] {
+            if let choice = URLPasteChoice.choose(value) {
+                if let snippet = choice.snippet { insertSnippet(snippet) }
+            } else { insertSnippet(value) }
+            return
+        }
+        guard let source = body["source"], source.utf8.count <= 2_000_000 else { return }
         lastSource = body["kind"] == "input" ? source : nil
         onChange?(source)
     }
@@ -95,6 +105,22 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
         let currentPage = pageID
         let urls = NoteEmbeds.blocks(source).compactMap { block -> URL? in
             if case .embed(_, let url) = block { return url }; return nil
+        }
+        let previews = NoteEmbeds.blocks(source).compactMap { block -> URL? in
+            if case .link(_, let url, _, true) = block { return url }; return nil
+        }
+        metadataTask = Task { @MainActor [weak self] in
+            await withTaskGroup(of: (Int, String?).self) { group in
+                for (index, url) in previews.enumerated() {
+                    group.addTask { (index, await LinkMetadata.shared.title(for: url)) }
+                }
+                for await (index, title) in group {
+                    guard !Task.isCancelled, let self, self.pageID == currentPage else { group.cancelAll(); return }
+                    if let title {
+                        _ = try? await self.callAsyncJavaScript("resolvePreview(index, title)", arguments: ["index": index, "title": title], in: nil, contentWorld: .page)
+                    }
+                }
+            }
         }
         resolutionTask = Task { @MainActor [weak self] in
             for (index, url) in urls.enumerated() {
@@ -136,17 +162,60 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = navigationAction.request.url
         if navigationAction.targetFrame?.isMainFrame == false {
-            decisionHandler(["https", "about"].contains(url?.scheme ?? "") ? .allow : .cancel)
+            decisionHandler(["https", "http", "about"].contains(url?.scheme ?? "") ? .allow : .cancel)
         } else if navigationAction.navigationType == .linkActivated {
             if let url, ["https", "http", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
             decisionHandler(.cancel)
         } else { decisionHandler(url?.scheme == "about" || url?.host == "luna.invalid" ? .allow : .cancel) }
     }
 
+    private static let listScript = #"""
+    let formattingList = false;
+    function currentLine() {
+      const selection=getSelection();
+      const block=selection.anchorNode?.parentElement?.closest('.text');
+      if(!block || !selection.isCollapsed)return null;
+      const range=selection.getRangeAt(0).cloneRange();range.selectNodeContents(block);range.setEnd(selection.anchorNode,selection.anchorOffset);
+      const before=range.toString();const start=before.lastIndexOf('\n')+1;
+      if((before.slice(0,start).match(/^\s*(```|~~~)/gm)||[]).length%2)return null;
+      return {block, prefix:before.slice(start), start};
+    }
+    function replaceBefore(count,text) {
+      const selection=getSelection();
+      for(let i=0;i<count;i++)selection.modify('extend','backward','character');
+      formattingList=true;document.execCommand('insertText',false,text);formattingList=false;
+    }
+    document.addEventListener('input',()=>{
+      if(formattingList)return;
+      const line=currentLine();if(!line)return;
+      let formatted=line.prefix.replace(/^([ \t]*)(?:[-*+•] )?\[([ xX])\] /,(_,indent,check)=>indent+(check===' '?'☐ ':'☑ '))
+        .replace(/^([ \t]*)[-*+] /,'$1• ').replace(/^([ \t]*)(\d+)\) /,'$1$2. ');
+      if(formatted!==line.prefix)replaceBefore(line.prefix.length,formatted);
+    });
+    document.addEventListener('keydown',e=>{
+      if(e.key!=='Enter'||e.shiftKey||e.isComposing)return;
+      const line=currentLine();if(!line)return;
+      const match=line.prefix.match(/^([ \t]*)([•☐☑]|\d+\.) (.*)$/);if(!match)return;
+      e.preventDefault();
+      if(!match[3].trim())replaceBefore(line.prefix.length,'');
+      else {const marker=/^\d/.test(match[2])?(Number.parseInt(match[2])+1)+'.':match[2]==='•'?'•':'☐';document.execCommand('insertText',false,'\n'+match[1]+marker+' ');}
+      post('input');
+    });
+    document.addEventListener('click',e=>{
+      if(!e.target.closest('.text'))return;
+      const range=document.caretRangeFromPoint(e.clientX,e.clientY);if(!range || range.startContainer.nodeType!==Node.TEXT_NODE)return;
+      const node=range.startContainer;const index=range.startOffset;const marker=node.textContent[index];
+      if(!['☐','☑'].includes(marker))return;
+      range.setEnd(node,index+1);getSelection().removeAllRanges();getSelection().addRange(range);
+      document.execCommand('insertText',false,marker==='☐'?'☑':'☐');post('input');
+    });
+    """#
+
     static func page(_ note: Note, fontSize: CGFloat, dark: Bool, pageID: String) -> String {
         let escape = NoteEmbeds.escape
         var html = ""
         var embedIndex = 0
+        var previewIndex = 0
         let blocks = NoteEmbeds.blocks(note.text)
         func textBlock(_ text: String, spacer: Bool = false) -> String {
             "<div class=\"text\" contenteditable=\"plaintext-only\" spellcheck=\"false\" data-block data-spacer=\"\(spacer)\">\(escape(text))</div>"
@@ -167,6 +236,11 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
                 } else {
                     html += "<figure data-block data-source=\"\(escape(source))\">Attachment unavailable<button class=\"remove\" aria-label=\"Remove attachment\"></button></figure>"
                 }
+            case .link(let source, let url, let label, let preview):
+                let title = preview ? (url.host ?? "Website") : label
+                let previewAttribute = preview ? " data-preview=\"\(previewIndex)\"" : ""
+                if preview { previewIndex += 1 }
+                html += "<figure class=\"\(preview ? "link-chip" : "linked-text")\" data-block data-source=\"\(escape(source))\"><a\(previewAttribute) href=\"\(escape(url.absoluteString))\" target=\"_blank\">\(escape(title)) ↗</a>\(preview ? "<small>" + escape(url.absoluteString) + "</small>" : "")<button class=\"remove\" aria-label=\"Remove link\"></button></figure>"
             case .embed(let source, let url):
                 let value = escape(url.absoluteString)
                 html += """
@@ -180,13 +254,14 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
         if blocks.isEmpty { html = textBlock("") }
         return """
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-\(pageID)'; style-src 'unsafe-inline'; img-src luna-media: https:; media-src luna-media: https:; frame-src https:; base-uri 'none'; form-action 'none'">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-\(pageID)'; style-src 'unsafe-inline'; img-src luna-media: https:; media-src luna-media: https:; frame-src https: http:; base-uri 'none'; form-action 'none'">
         <style>
         :root {color-scheme: \(dark ? "dark" : "light");}
-        body {margin:0;padding:24px 40px 80px;color:\(dark ? "#cccccc" : "#242833");font:\(fontSize)px/1.65 -apple-system,BlinkMacSystemFont,sans-serif;}
+        body {box-sizing:border-box;min-height:100vh;margin:0;padding:24px 40px 80px;color:\(dark ? "#cccccc" : "#242833");font:\(fontSize)px/1.65 -apple-system,BlinkMacSystemFont,sans-serif;}
         article {max-width:72ch;margin:auto;} .text {white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.65em;outline:none;}
         .text:empty:before {content:'Write something…';color:\(dark ? "#777d85" : "#858b92");pointer-events:none;}
         .text:empty:not(:focus):not(:last-child):before {content:none;}
+        .link-chip {border:1px solid #8884;border-radius:10px;padding:12px 16px;} .link-chip small {display:block;font-size:12px;opacity:.65;overflow-wrap:anywhere;}
         figure {position:relative;margin:20px 0;padding:0;} img,video {display:block;max-width:100%;max-height:580px;border-radius:8px;}
         audio {width:100%;} iframe {display:block;width:100%;height:380px;border:1px solid #8883;border-radius:8px;background:#fff;}
         figcaption {font-size:11px;opacity:.7;margin-top:6px;overflow-wrap:anywhere;} a {color:inherit;} .remove {position:absolute;right:8px;top:8px;border:0;border-radius:50%;width:26px;height:26px;background:#222c;color:white;padding:0;box-sizing:border-box;appearance:none;cursor:pointer;opacity:0;}
@@ -198,15 +273,32 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
         const page = '\(pageID)';
         function source() {return [...document.querySelectorAll('[data-block]')].filter(e=>e.dataset.spacer!=='true'||e.innerText!=='').map(e=>e.dataset.source ?? e.innerText.replace(/\\r/g,'')).join('\\n');}
         function post(kind) {window.webkit.messageHandlers.note.postMessage({page,kind,source:source()});}
+        \(listScript)
         document.addEventListener('input',()=>post('input'));
         document.addEventListener('click',e=>{if(e.target.matches('.remove')){e.target.closest('figure').remove();post('structure');}});
+        document.addEventListener('mousedown',event=>{
+          if(event.button!==0 || !event.target.matches('html,body,article'))return;
+          const article=document.querySelector('article');
+          let last=article.lastElementChild;
+          if(last && event.clientY<last.getBoundingClientRect().bottom)return;
+          event.preventDefault();
+          if(!last?.matches('.text')){
+            last=document.createElement('div');last.className='text';last.contentEditable='plaintext-only';
+            last.dataset.block='';last.dataset.spacer='true';article.append(last);
+          }
+          last.focus({preventScroll:true});
+          const range=document.createRange();range.selectNodeContents(last);range.collapse(false);
+          const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
+        });
         function placeCaret(x,y) {const r=document.caretRangeFromPoint(x,y);if(r&&r.startContainer.parentElement.closest('.text')){const s=getSelection();s.removeAllRanges();s.addRange(r);}}
         function insertSnippet(snippet) {
           const selected=getSelection();let block=selected.anchorNode?.parentElement?.closest('.text');
           if(!block){block=document.querySelector('.text:last-child');if(!block){block=document.createElement('div');block.className='text';block.contentEditable='plaintext-only';block.dataset.block='';document.querySelector('article').append(block);}block.focus();const range=document.createRange();range.selectNodeContents(block);range.collapse(false);selected.removeAllRanges();selected.addRange(range);}
           document.execCommand('insertText',false,snippet);post('structure');
         }
-        document.addEventListener('paste',e=>{const text=e.clipboardData.getData('text/plain');const match=text.match(/<iframe\\b[^>]*\\bsrc\\s*=\\s*["'](https:\\/\\/[^"']+)["']/i);let url=match?.[1]||text.trim();try{const parsed=new URL(url);if(parsed.protocol==='https:'&&!parsed.username&&!parsed.password&&!/\\s/.test(url)){e.preventDefault();insertSnippet('\\n[Embed]('+url.replace(/&amp;/g,'&')+')\\n');}}catch{}});
+        document.addEventListener('paste',e=>{const text=e.clipboardData.getData('text/plain');if(/^(https?:\\/\\/\\S+)$/.test(text.trim())||/<iframe/i.test(text)){e.preventDefault();window.webkit.messageHandlers.note.postMessage({page,kind:'paste',value:text});}});
+
+        function resolvePreview(index,title) {const link=document.querySelector('[data-preview="'+index+'"]');if(link)link.textContent=title+' ↗';}
         function resolveEmbed(index,url) {const frame=document.querySelector('[data-embed="'+index+'"]');if(frame&&frame.src!==url)frame.src=url;}
         </script></body></html>
         """

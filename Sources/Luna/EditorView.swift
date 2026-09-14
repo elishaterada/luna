@@ -1,6 +1,7 @@
 import AppKit
 
 final class EditorView: NSTextView {
+    var formatsLists = true
     private var dismissedCalculation: String?
     var exchangeRates = ExchangeRates.shared
     private var currencyTask: Task<Void, Never>?
@@ -93,10 +94,51 @@ final class EditorView: NSTextView {
     var onMediaDrop: (([URL], NSRange) -> Void)?
     var onEmbedPaste: ((String) -> Void)?
     override func paste(_ sender: Any?) {
-        if let value = NSPasteboard.general.string(forType: .string), let snippet = NoteEmbeds.insertion(value), let onEmbedPaste {
-            onEmbedPaste(snippet); return
+        if let value = NSPasteboard.general.string(forType: .string),
+           let choice = URLPasteChoice.choose(value) {
+            if let snippet = choice.snippet {
+                if choice.live, let onEmbedPaste { onEmbedPaste(snippet) }
+                else { insertText(snippet, replacementRange: selectedRange()) }
+            }
+            return
         }
         super.paste(sender)
+    }
+    override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        guard formatsLists, let value = insertString as? String else {
+            super.insertText(insertString, replacementRange: replacementRange); return
+        }
+        let range = replacementRange.location == NSNotFound ? selectedRange() : replacementRange
+        let source = string as NSString
+        guard NSMaxRange(range) <= source.length else { return }
+        let lineStart = source.lineRange(for: NSRange(location: range.location, length: 0)).location
+        guard range.location - lineStart <= 32_768 else { super.insertText(value, replacementRange: range); return }
+        let prefix = source.substring(with: NSRange(location: lineStart, length: range.location - lineStart))
+        // Never reinterpret code inside fenced blocks.
+        let before = source.substring(with: NSRange(location: max(0, lineStart - 32_768), length: min(lineStart, 32_768)))
+        let fenced = before.components(separatedBy: "\n").filter {
+            let line = $0.trimmingCharacters(in: .whitespaces)
+            return line.hasPrefix("```") || line.hasPrefix("~~~")
+        }.count % 2 == 1
+        let formatted = fenced ? prefix + value : NoteLists.formatted(prefix + value)
+        if formatted != prefix + value {
+            super.insertText(formatted, replacementRange: NSRange(location: lineStart, length: NSMaxRange(range) - lineStart))
+        } else { super.insertText(value, replacementRange: range) }
+    }
+    override func mouseDown(with event: NSEvent) {
+        if formatsLists {
+            let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
+            let ns = string as NSString
+            if index < ns.length {
+                let line = ns.lineRange(for: NSRange(location: index, length: 0))
+                let prefix = ns.substring(with: NSRange(location: line.location, length: index - line.location))
+                let marker = ns.substring(with: NSRange(location: index, length: 1))
+                if prefix.trimmingCharacters(in: .whitespaces).isEmpty, ["☐", "☑"].contains(marker) {
+                    insertText(marker == "☐" ? "☑" : "☐", replacementRange: NSRange(location: index, length: 1)); return
+                }
+            }
+        }
+        super.mouseDown(with: event)
     }
     private func files(_ sender: NSDraggingInfo) -> [URL]? {
         sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
@@ -157,6 +199,12 @@ final class EditorView: NSTextView {
         let line = source.lineRange(for: NSRange(location: location, length: 0))
         let prefix = source.substring(with: NSRange(location: line.location, length: location - line.location))
         let indentation = String(prefix.prefix { $0 == " " || $0 == "\t" })
+        if formatsLists, let list = NoteLists.continuation(prefix) {
+            if list.empty {
+                insertText("", replacementRange: NSRange(location: line.location, length: location - line.location))
+            } else { insertText("\n" + list.prefix, replacementRange: selectedRange()) }
+            return
+        }
         super.insertNewline(sender)
         if EditorPreferences.autoIndent && !indentation.isEmpty { insertText(indentation, replacementRange: selectedRange()) }
     }
@@ -220,6 +268,25 @@ final class SyntaxHighlighter {
                 guard let match else { return }
                 storage.addAttribute(.foregroundColor, value: color,
                                      range: NSRange(location: range.location + match.range.location, length: match.range.length))
+            }
+        }
+        if let editor = view as? EditorView, editor.formatsLists {
+            let fullLines = (view.string as NSString).lineRange(for: range)
+            let lines = NSRange(location: fullLines.location, length: min(fullLines.length, 32_768))
+            let snippet = (view.string as NSString).substring(with: lines)
+            var offset = lines.location
+            for line in snippet.components(separatedBy: "\n") {
+                let length = (line as NSString).length
+                if length > 0 {
+                    let paragraph = (view.defaultParagraphStyle?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+                    paragraph.lineSpacing = (view.font?.pointSize ?? 18) * EditorPreferences.lineSpacing
+                    if NoteLists.continuation(line) != nil {
+                        let marker = line.range(of: NoteLists.pattern, options: .regularExpression).map { String(line[$0]) } ?? ""
+                        paragraph.headIndent = (marker as NSString).size(withAttributes: [.font: view.font ?? NSFont.systemFont(ofSize: 18)]).width
+                    }
+                    storage.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: offset, length: length))
+                }
+                offset += length + 1
             }
         }
         storage.endEditing()

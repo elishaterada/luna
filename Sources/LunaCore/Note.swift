@@ -111,6 +111,7 @@ public enum TextFile {
         var note = Note(text: text, path: url.path, language: Note.language(for: url))
         note.encoding = encoding.rawValue
         note.diskModified = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        note.modified = note.diskModified ?? note.modified
         return note
     }
     private static func invalidText() -> NSError {

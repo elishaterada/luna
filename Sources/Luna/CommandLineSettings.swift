@@ -153,7 +153,7 @@ private struct LunaSettingsView: View {
                 Slider(value: $editorPadding, in: 16...80, step: 4) { Text("Editor padding") }
                 Text("\(Int(editorPadding)) pt").monospacedDigit().frame(width: 44)
             }
-            Text("A little space to think.\nlet thought = \"Something good\"")
+            Text("Your next idea.\nlet thought = \"Something good\"")
                 .font(Font(EditorPreferences.font(at: fontSize, family: family)))
                 .foregroundStyle(Color(nsColor: Theme.text))
                 .frame(maxWidth: .infinity, minHeight: 90, alignment: .leading)

@@ -23,7 +23,7 @@ struct SkinSettingsView: View {
                     ZStack(alignment: .bottomLeading) {
                         SkinBackground(library: library, preview: true)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("# A little space to think").foregroundStyle(Color(nsColor: Theme.mint))
+                            Text("# Your next idea").foregroundStyle(Color(nsColor: Theme.mint))
                             Text("Your words, with a view.")
                         }.font(.system(.callout, design: .monospaced)).padding(20)
                     }
@@ -102,11 +102,6 @@ struct SkinSettingsView: View {
                     }
                     Text("Increase to soften distractions and give text a calmer backdrop. The tint follows your light or dark theme.")
                         .font(.caption).foregroundStyle(.secondary)
-                    if config.selected?.kind == .photo {
-                    Toggle("Extend photos with softened edges", isOn: binding(\.extendImage))
-                    Text("Keeps the whole photo visible and fills extra space with a blurred extension of its colors.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    }
                     Toggle("Subtle perspective with pointer movement", isOn: binding(\.perspective))
                     Text("Reduce Motion pauses video and perspective. Reduce Transparency uses a solid background.")
                         .font(.caption).foregroundStyle(.secondary)

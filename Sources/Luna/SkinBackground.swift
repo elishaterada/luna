@@ -49,7 +49,7 @@ final class SkinBackgroundView: NSView {
         mediaLayer.addSublayer(extensionLayer)
         mediaLayer.addSublayer(imageLayer)
         mediaLayer.addSublayer(videoLayer)
-        imageLayer.contentsGravity = .resizeAspect
+        imageLayer.contentsGravity = .resizeAspectFill
         extensionLayer.contentsGravity = .resizeAspectFill
         extensionLayer.filters = [CIFilter(name: "CIGaussianBlur", parameters: [kCIInputRadiusKey: 35])].compactMap { $0 }
         videoLayer.videoGravity = .resizeAspectFill
@@ -122,8 +122,8 @@ final class SkinBackgroundView: NSView {
         glass.alphaValue = 0.22
         let color = EditorPreferences.isLight ? NSColor.white : NSColor.black
         veil.backgroundColor = color.withAlphaComponent(solid ? 1 : config.readability).cgColor
-        imageLayer.contentsGravity = config.extendImage ? .resizeAspect : .resizeAspectFill
-        extensionLayer.isHidden = !config.extendImage
+        imageLayer.contentsGravity = .resizeAspectFill
+        extensionLayer.isHidden = true
         videoLayer.isHidden = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         mediaLayer.transform = CATransform3DIdentity
     }

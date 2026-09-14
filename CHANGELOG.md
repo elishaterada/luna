@@ -1,5 +1,14 @@
 # Luna release notes
 
+## 0.7.0 — 2026-09-13
+
+- Write bulleted, numbered, and checkbox lists directly in notes. Return continues the list; Return on an empty item ends it.
+- Choose plain text, linked text, a preview chip, or a live site embed when pasting a URL. Preview chips fetch the page title.
+- Open any directory in a note’s path directly in Finder. White path segments underline individually on hover.
+- See the last updated date and time, down to the minute, above each note.
+- Click below the end of a live note to continue typing on its last line.
+- Enjoy photos that cover the entire background and a simpler sidebar without the tagline.
+
 ## 0.6.0 — 2026-09-13
 
 - Convert currencies as you write, including `100,000 baht in USD =`, then press Tab to accept an approximate result. Rates are cached for 24 hours.

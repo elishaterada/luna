@@ -5,13 +5,15 @@ enum NoteEmbeds {
     enum Block: Equatable {
         case text(String)
         case media(source: String, id: UUID)
+        case link(source: String, url: URL, label: String, preview: Bool)
         case embed(source: String, url: URL)
         var source: String {
-            switch self { case .text(let value), .media(let value, _), .embed(let value, _): return value }
+            switch self { case .text(let value), .media(let value, _), .embed(let value, _), .link(let value, _, _, _): return value }
         }
     }
     static func webURL(_ value: String) -> URL? {
-        guard let url = URL(string: value), url.scheme?.lowercased() == "https", url.host != nil,
+        guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil,
+              !value.contains(where: { $0.isWhitespace }),
               url.user == nil, url.password == nil else { return nil }
         return url
     }
@@ -59,7 +61,15 @@ enum NoteEmbeds {
             }
             var candidate = trimmed
             if trimmed.hasPrefix("[Embed]("), trimmed.hasSuffix(")") { candidate = String(trimmed.dropFirst(8).dropLast()) }
-            if let url = webURL(candidate) ?? iframeURL(trimmed) {
+            if let regex = try? NSRegularExpression(pattern: #"^\[([^\]]+)\]\((https?://[^\s]+)\)$"#),
+               let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+               let labelRange = Range(match.range(at: 1), in: trimmed),
+               let urlRange = Range(match.range(at: 2), in: trimmed),
+               String(trimmed[labelRange]) != "Embed", let url = webURL(String(trimmed[urlRange])) {
+                let label = String(trimmed[labelRange])
+                flush(); blocks.append(.link(source: line, url: url, label: label, preview: label == "Preview")); continue
+            }
+            if let url = (trimmed.hasPrefix("[Embed](") ? webURL(candidate) : nil) ?? iframeURL(trimmed) {
                 flush(); blocks.append(.embed(source: line, url: url)); continue
             }
             text.append(line)

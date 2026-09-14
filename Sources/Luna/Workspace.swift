@@ -51,8 +51,10 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     private var largerButton: ChromeButton!
 
     let heading = Theme.label("Untitled note", size: 14, color: Theme.text, weight: .medium)
+    let notePath = NotePathView()
     let subtitle = Theme.label("Private note · kept on this Mac", size: 11)
     let status = Theme.label("All notes stay with you", size: 11)
+    let updated = Theme.label("", size: 11)
     let position = Theme.label("Ln 1, Col 1", size: 11)
     let language = NSPopUpButton()
     let sizeLabel = Theme.label("18 pt", size: 11)
@@ -134,7 +136,6 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             main.topAnchor.constraint(equalTo: root.topAnchor), main.bottomAnchor.constraint(equalTo: root.bottomAnchor)
         ])
         let brand = Theme.label("Luna", size: 20, color: Theme.mint, weight: .medium)
-        let tagline = Theme.label("A little space to think.", size: 12)
         let shelfTitle = Theme.label("Notes", size: 13, weight: .semibold)
         let add = Theme.button("plus", label: "New note (⌘N)", target: self, action: #selector(newNote))
         let shelfHeader = NSStackView(views: [shelfTitle, NSView(), add]); shelfHeader.orientation = .horizontal
@@ -156,15 +157,14 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         }
         table.menu = noteMenu
         let local = Theme.label("Stored on this Mac", size: 11)
-        for view in [brand, tagline, shelfHeader, shelfScroll, local] { view.translatesAutoresizingMaskIntoConstraints = false; sidebar.addSubview(view) }
+        for view in [brand, shelfHeader, shelfScroll, local] { view.translatesAutoresizingMaskIntoConstraints = false; sidebar.addSubview(view) }
         NSLayoutConstraint.activate([
             brand.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 56), brand.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 24),
-            tagline.topAnchor.constraint(equalTo: brand.bottomAnchor, constant: 8), tagline.leadingAnchor.constraint(equalTo: brand.leadingAnchor),
-            shelfHeader.topAnchor.constraint(equalTo: tagline.bottomAnchor, constant: 24), shelfHeader.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 24), shelfHeader.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -24),
+            shelfHeader.topAnchor.constraint(equalTo: brand.bottomAnchor, constant: 24), shelfHeader.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 24), shelfHeader.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -24),
             shelfScroll.topAnchor.constraint(equalTo: shelfHeader.bottomAnchor, constant: 8), shelfScroll.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12), shelfScroll.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12), shelfScroll.bottomAnchor.constraint(equalTo: local.topAnchor, constant: -16),
             local.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 28), local.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -24)
         ])
-        let titleStack = NSStackView(views: [heading, subtitle]); titleStack.orientation = .vertical; titleStack.alignment = .leading; titleStack.spacing = 8
+        let titleStack = NSStackView(views: [heading, subtitle, notePath, updated]); titleStack.orientation = .vertical; titleStack.alignment = .leading; titleStack.spacing = 8
         sidebarButton = Theme.button("sidebar.left", label: "Hide notes (⌘⌥S)", target: self, action: #selector(toggleSidebar))
         sidebarButton.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(sidebarButton)
@@ -371,6 +371,9 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         heading.toolTip = note.title
         subtitle.toolTip = presenting ? nil : note.path
         subtitle.stringValue = presenting ? "Presentation · a little room for the big picture" : (note.path.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "Private note · kept on this Mac")
+        notePath.show(path: presenting ? nil : note.path)
+        subtitle.isHidden = !presenting && note.path != nil
+        updated.stringValue = "Updated " + note.modified.formatted(date: .abbreviated, time: .shortened)
         window?.title = "\(note.title) — Luna"; window?.representedURL = presenting ? nil : note.path.map { URL(fileURLWithPath: $0) }
         window?.isDocumentEdited = note.path != nil && note.dirty
         status.stringValue = note.path == nil ? "●  Kept on this Mac" : (note.dirty ? "●  Edited · ⌘S to save file" : "Saved to file")
@@ -614,6 +617,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         focusContent()
     }
     private func updatePreview() {
+        editor.formatsLists = index.map { ["Plain Text", "Markdown"].contains(notes[$0].language) } ?? true
         let isMarkdown = index.map { notes[$0].language == "Markdown" } ?? false
         if !isMarkdown { previewing = false }
         let hasMedia = index.map { NoteEmbeds.hasContent(notes[$0].text) } ?? false
