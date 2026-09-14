@@ -2,6 +2,16 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-09-14 — Lead README with support and demo
+
+**Request:** Put Buy Me a Coffee at the top and use the hero video as the first README visual.
+
+**Correction:** Moved the support destination to a centered text link above the title, so a badge does not precede the hero. Moved the video poster and 18-second demo link into the hero position; moved the suggestion still into the calculation section and removed the duplicate lower video placement. The first image links to the H.264 MP4; playback requires clicking, not autoplay.
+
+**Verification:** README local links resolve and the first image is the video poster. `git diff --check` passed. Asset bytes and application behavior unchanged. Required build passed; opened `dist/Luna.app` and verified the running executable belongs to this worktree. Existing notes were not edited.
+
+**Publication:** Documentation follow-up for main; no application release or website deployment.
+
 ## 2026-09-14 — README desktop screenshots and demo
 
 **Request:** Use the newly captured portfolio assets in README.md and push the update.

@@ -1,10 +1,14 @@
+<p align="center"><a href="https://buymeacoffee.com/elishaterada"><strong>☕ Buy Me a Coffee</strong></a></p>
+
 <h1 align="center">Luna</h1>
 
 <p align="center"><strong>A little space to think.</strong><br>A native Mac app for quick notes, everyday files, and ideas worth putting on screen.</p>
 
 <p align="center"><a href="https://github.com/elishaterada/luna/releases/latest">Download Luna</a> · <a href="docs/user-guide.md">User guide</a> · <a href="CHANGELOG.md">What’s new</a></p>
 
-![Luna’s translucent window over a blue desktop, showing a workshop plan and an inline $144 calculation suggestion](docs/screenshots/desktop/01-calculation-suggestion.webp)
+[![Watch Luna calculate, accept an answer, enter presentation mode, and return to editing](docs/screenshots/desktop/06-video-poster.webp)](docs/screenshots/desktop/05-calculation-to-presentation.mp4)
+
+[Watch the 18-second silent demo](docs/screenshots/desktop/05-calculation-to-presentation.mp4): enter the calculation → accept with Tab → present → return to editing.
 
 An idea arrives before it has a filename. A plan needs a few numbers. A conversation needs a page everyone can read. Luna gives you a comfortable place for all three—and opens the text files you already work with.
 
@@ -22,11 +26,9 @@ An idea arrives before it has a filename. A plan needs a few numbers. A conversa
 
 Name your inputs, type an expression ending in `=`, and press Tab to accept the suggestion as ordinary text.
 
+![Luna’s translucent window over a blue desktop, showing a workshop plan and an inline $144 calculation suggestion](docs/screenshots/desktop/01-calculation-suggestion.webp)
+
 ![Workshop calculation after Tab accepts $144 as ordinary text](docs/screenshots/desktop/02-accepted-answer.webp)
-
-[![Watch Luna calculate, accept an answer, enter presentation mode, and return to editing](docs/screenshots/desktop/06-video-poster.webp)](docs/screenshots/desktop/05-calculation-to-presentation.mp4)
-
-[Watch the 18-second silent demo](docs/screenshots/desktop/05-calculation-to-presentation.mp4): enter the calculation → accept with Tab → present → return to editing.
 
 ## Write, then read beautifully
 
@@ -107,7 +109,6 @@ Luna’s original code and documentation are copyright © 2026 Elisha Terada and
 
 ## Support Luna
 
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-Support_Luna-FFDD00?style=flat&logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/elishaterada)
 
 Luna is fully usable for free. Optional contributions help cover Apple Developer membership and AI-assisted maintenance costs. Support is voluntary and does not unlock features or include priority support.
 
