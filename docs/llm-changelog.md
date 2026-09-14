@@ -10,7 +10,9 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Preflight:** All 71 Swift tests and 4 release-tool tests passed. Stable version-order check and `Scripts/build.sh` passed, including nested signing verification. The changed menu was exercised in the preceding entry. `git diff --check` passed.
 
-**Release status:** Publication authorized; tag/workflow and public-download/update verification pending. This entry will be updated with the actual outcome.
+**Release status:** Published [Luna 0.7.1](https://github.com/elishaterada/luna/releases/tag/v0.7.1), tag commit `b41c1b5`, build `20260914123653`. [Release workflow](https://github.com/elishaterada/luna/actions/runs/34843518372) attempt 3 passed all tests, signed packaging, and public latest-release/highlights/feed/ZIP verification, including byte-for-byte comparison with signed artifacts. Attempts 1 and 2 were cancelled after XCTest stopped progressing around the transition into skin tests without reporting an assertion failure. Attempt 3 passed with the same tag and unchanged checks; the intermittent hang's cause remains unconfirmed.
+
+**Installed update verification:** Opened the installed 0.7.0 copy, used Check for Updates, reviewed the 0.7.1 highlights, and chose Install and Relaunch. Confirmed `/Applications/Luna.app` runs 0.7.1 / `20260914123653`, the direct Buy Me a Coffee menu item is present, and bundled Luna license/third-party notices match the repository byte-for-byte. All four pre-existing recovery files remain; three match their pre-update SHA-256 fingerprints and one note JSON changed during the review/update interval. Only whole-file hashes were recorded before the update, so text preservation for that changed JSON cannot be independently established from this check. No note contents were added to the log. Updated app remains open for review.
 
 ## 2026-09-14 — Direct support item in the Luna menu
 
