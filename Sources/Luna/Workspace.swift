@@ -20,6 +20,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     private var additionalWindows: [Workspace] = []
     private var sharingPicker: NSSharingServicePicker?
+    private var actionNoteID: UUID?
     var selectedID: UUID?
     let store: RecoveryStore
     var diskQueue: DispatchQueue { session.diskQueue }
@@ -84,6 +85,9 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 740),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: window)
+        let dropRoot = FileDropView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
+        dropRoot.onFileDrop = { [weak self] urls in self?.openDroppedFiles(urls) }
+        window.contentView = dropRoot
         window.title = "Luna"; window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
         window.isOpaque = false
         window.backgroundColor = NSColor.white.withAlphaComponent(0.001)
@@ -143,19 +147,12 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         let column = NSTableColumn(identifier: .init("note")); table.addTableColumn(column)
         table.headerView = nil; table.backgroundColor = .clear; table.rowHeight = Theme.Layout.rowHeight; table.intercellSpacing = NSSize(width: 0, height: 4)
         table.style = .plain; table.backgroundColor = .clear; table.selectionHighlightStyle = .regular; table.delegate = self; table.dataSource = self
+        window?.acceptsMouseMovedEvents = true
         table.setAccessibilityLabel("Notes and open files"); shelfScroll.documentView = table
         table.focusContent = { [weak self] in self?.focusContent() }
-        table.registerForDraggedTypes([Self.noteDragType])
+        table.registerForDraggedTypes([Self.noteDragType, .fileURL])
         table.setDraggingSourceOperationMask(.move, forLocal: true)
-        let noteMenu = NSMenu()
-        for (title, action) in [("Pin", #selector(pinClickedNote)), ("Duplicate", #selector(duplicateClickedNote)),
-                                ("Share…", #selector(shareClickedNote)), ("Open in New Window", #selector(openClickedNoteInWindow)),
-                                ("Delete Note…", #selector(deleteClickedNote))] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            noteMenu.addItem(item)
-        }
-        table.menu = noteMenu
+        table.menu = makeNoteActionsMenu()
         let local = Theme.label("Stored on this Mac", size: 11)
         for view in [brand, shelfHeader, shelfScroll, local] { view.translatesAutoresizingMaskIntoConstraints = false; sidebar.addSubview(view) }
         NSLayoutConstraint.activate([
@@ -191,9 +188,10 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         editor.minSize = NSSize(width: 0, height: 0); editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.delegate = self; editor.setAccessibilityLabel("Note editor")
         editor.registerForDraggedTypes([.fileURL])
-        editor.onMediaDrop = { [weak self] urls, range in self?.importMedia(urls, range: range) }
+        editor.onFileDrop = { [weak self] urls in self?.openDroppedFiles(urls) }
         editor.onEmbedPaste = { [weak self] snippet in self?.insertEmbed(snippet) }
-        mediaView.onImport = { [weak self] urls in self?.importMedia(urls) }
+        mediaView.onFileDrop = { [weak self] urls in self?.openDroppedFiles(urls) }
+        markdownPreview.onFileDrop = { [weak self] urls in self?.openDroppedFiles(urls) }
         mediaView.onChange = { [weak self] source in
             guard let self, let index = self.index else { return }
             var note = self.notes[index]
@@ -272,12 +270,18 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation {
+        if !FileDrop.urls(in: info.draggingPasteboard).isEmpty {
+            tableView.setDropRow(-1, dropOperation: .on)
+            return .copy
+        }
         guard info.draggingSource as? NSTableView === table, (0...notes.count).contains(row) else { return [] }
         tableView.setDropRow(row, dropOperation: .above)
         return .move
     }
     func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
                    dropOperation: NSTableView.DropOperation) -> Bool {
+        let files = FileDrop.urls(in: info.draggingPasteboard)
+        if !files.isEmpty { openDroppedFiles(files); return true }
         guard info.draggingSource as? NSTableView === table,
               let value = info.draggingPasteboard.string(forType: Self.noteDragType),
               let id = UUID(uuidString: value) else { return false }
@@ -299,20 +303,56 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { NoteRowView() }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let note = notes[row]
-        let cell = NSTableCellView()
+        let cell = NoteCellView()
         cell.toolTip = note.path ?? note.title
         let title = Theme.label((note.isPinned ? "📌 " : "") + note.title, size: 13, color: Theme.text, weight: .medium)
         let edited = Theme.label(note.path != nil && note.dirty ? "●" : "", size: 8, color: Theme.mint)
         edited.setAccessibilityLabel(note.path != nil && note.dirty ? "Unsaved changes" : "")
-        for view in [title, edited] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
+        let actions = cell.actionsButton
+        actions.isHidden = table.hoveredRow != row
+        actions.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Note actions")
+        actions.imagePosition = .imageOnly; actions.isBordered = false
+        actions.toolTip = "Note actions"; actions.setAccessibilityLabel("Actions for \(note.title)")
+        actions.identifier = NSUserInterfaceItemIdentifier(note.id.uuidString)
+        actions.target = self; actions.action = #selector(showNoteActions(_:))
+        for view in [title, edited, actions] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
         NSLayoutConstraint.activate([
             title.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 12),
             title.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            title.trailingAnchor.constraint(equalTo: edited.leadingAnchor, constant: -8),
-            edited.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -12),
-            edited.centerYAnchor.constraint(equalTo: cell.centerYAnchor), edited.widthAnchor.constraint(equalToConstant: 8)
+            title.trailingAnchor.constraint(lessThanOrEqualTo: edited.leadingAnchor, constant: -8),
+            edited.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -4),
+            edited.centerYAnchor.constraint(equalTo: cell.centerYAnchor), edited.widthAnchor.constraint(equalToConstant: 8),
+            actions.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+            actions.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            actions.widthAnchor.constraint(equalToConstant: 28), actions.heightAnchor.constraint(equalToConstant: 28)
         ])
         return cell
+    }
+
+    func makeNoteActionsMenu() -> NSMenu {
+        let menu = NSMenu()
+        let actions: [(String, Selector, String, NSEvent.ModifierFlags)] = [
+            ("Pin", #selector(pinClickedNote), "p", [.command, .control]),
+            ("Duplicate", #selector(duplicateClickedNote), "d", .command),
+            ("Share…", #selector(shareClickedNote), "s", [.command, .control]),
+            ("Open in New Window", #selector(openClickedNoteInWindow), "o", [.command, .shift]),
+            ("Delete Note…", #selector(deleteClickedNote), "\u{8}", .command)
+        ]
+        for (title, action, key, modifiers) in actions {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers; item.target = self
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func showNoteActions(_ sender: NSButton) {
+        guard let value = sender.identifier?.rawValue, let id = UUID(uuidString: value) else { return }
+        actionNoteID = id
+        let menu = makeNoteActionsMenu()
+        menu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: sender.bounds.minY - 2), in: sender)
+        actionNoteID = nil
+        sender.isHidden = false
     }
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard !reloadingShelf else { return }
@@ -476,6 +516,10 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             }
         }
     }
+    func openDroppedFiles(_ urls: [URL]) {
+        urls.filter(\.isFileURL).forEach { open($0) }
+    }
+
     @objc func openFile() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = true
         panel.beginSheetModal(for: window!) { [weak self] response in if response == .OK { panel.urls.forEach { self?.open($0) } } }
@@ -661,7 +705,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         reloadShelf(); updateHeader()
     }
     private var clickedNoteID: UUID? {
-        notes.indices.contains(table.clickedRow) ? notes[table.clickedRow].id : nil
+        actionNoteID ?? (notes.indices.contains(table.clickedRow) ? notes[table.clickedRow].id : selectedID)
     }
     @objc func pinClickedNote() { if let id = clickedNoteID { togglePin(id) } }
     func togglePin(_ id: UUID) {
@@ -689,7 +733,8 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         var sharedText = note.text
         for item in assets { sharedText = sharedText.replacingOccurrences(of: item.reference, with: item.filename) }
         sharingPicker = NSSharingServicePicker(items: [sharedText] + assets.map { store.attachmentURL($0, noteID: note.id) } as [Any])
-        sharingPicker?.show(relativeTo: table.rect(ofRow: table.clickedRow), of: table, preferredEdge: .maxX)
+        let row = notes.firstIndex(where: { $0.id == id }) ?? table.selectedRow
+        sharingPicker?.show(relativeTo: table.rect(ofRow: row), of: table, preferredEdge: .maxX)
     }
     @objc func openClickedNoteInWindow() { if let id = clickedNoteID { openNoteInWindow(id) } }
     @discardableResult func openNoteInWindow(_ id: UUID) -> Workspace? {
@@ -712,12 +757,16 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     private func confirmDeletion(_ id: UUID) {
         guard let note = notes.first(where: { $0.id == id }) else { return }
-        let alert = NSAlert(); alert.messageText = note.path == nil ? "Delete this note?" : "Remove this file from Luna?"
-        alert.informativeText = "“\(note.title)” will be removed from Luna. Any file saved on disk will remain unchanged."
-        alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: note.path == nil ? "Delete" : "Remove")
+        if !Self.requiresCloseConfirmation(note) { removeNote(id); return }
+        let alert = NSAlert(); alert.messageText = note.path == nil ? "Delete this note?" : "Close this file with unsaved edits?"
+        alert.informativeText = note.path == nil
+            ? "“\(note.title)” will be deleted from Luna."
+            : "Unsaved edits to “\(note.title)” will be removed from Luna. The saved file on disk will remain unchanged."
+        alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: note.path == nil ? "Delete" : "Close")
         guard alert.runModal() == .alertSecondButtonReturn else { return }
         removeNote(id)
     }
+    static func requiresCloseConfirmation(_ note: Note) -> Bool { note.path == nil || note.dirty }
     @discardableResult func removeNote(_ id: UUID) -> Bool {
         guard let removedIndex = notes.firstIndex(where: { $0.id == id }), flushRecovery() else { return false }
         do { try diskQueue.sync { try store.remove(id) } } catch { showError(error); return false }
@@ -737,8 +786,8 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             return true
         }
         if item.action == #selector(deleteClickedNote) {
-            guard notes.indices.contains(table.clickedRow) else { return false }
-            item.title = notes[table.clickedRow].path == nil ? "Delete Note…" : "Remove from Luna…"
+            guard let id = clickedNoteID, let note = notes.first(where: { $0.id == id }) else { return false }
+            item.title = note.path == nil ? "Delete Note…" : (note.dirty ? "Close Tab…" : "Close Tab")
             return true
         }
         if item.action == #selector(deleteNote) { return index != nil }

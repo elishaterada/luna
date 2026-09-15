@@ -34,9 +34,8 @@ private final class WeakNoteMessageHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-final class MediaNoteView: WKWebView, WKNavigationDelegate {
+final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     var onChange: ((String) -> Void)?
-    var onImport: (([URL]) -> Void)?
     private let mediaHandler: NoteMediaHandler
     private let messageProxy: WeakNoteMessageHandler
     private var lastSource: String?
@@ -132,31 +131,6 @@ final class MediaNoteView: WKWebView, WKNavigationDelegate {
                 }
             }
         }
-    }
-    private func droppedFiles(_ sender: NSDraggingInfo) -> [URL]? {
-        sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
-    }
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if let files = droppedFiles(sender), !files.isEmpty { return .copy }
-        return super.draggingEntered(sender)
-    }
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if let files = droppedFiles(sender), !files.isEmpty { return .copy }
-        return super.draggingUpdated(sender)
-    }
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        if let files = droppedFiles(sender), !files.isEmpty { return true }
-        return super.prepareForDragOperation(sender)
-    }
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let files = droppedFiles(sender), !files.isEmpty else { return super.performDragOperation(sender) }
-        let point = convert(sender.draggingLocation, from: nil)
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            _ = try? await self.callAsyncJavaScript("placeCaret(x, y)", arguments: ["x": point.x, "y": self.isFlipped ? point.y : self.bounds.height - point.y], in: nil, contentWorld: .page)
-            self.onImport?(files)
-        }
-        return true
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

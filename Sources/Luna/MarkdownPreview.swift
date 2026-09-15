@@ -117,7 +117,7 @@ private final class TaskToggleHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-final class MarkdownPreview: WKWebView, WKNavigationDelegate {
+final class MarkdownPreview: FileDropWebView, WKNavigationDelegate {
     var onTaskToggle: ((String, NSRange, String) -> Bool)?
     private var taskEdits: [Int: Int] = [:]
     private let renderQueue = DispatchQueue(label: "dev.luna.markdown", qos: .userInitiated)

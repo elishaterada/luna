@@ -2,6 +2,42 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-09-15 — Hover note actions, shortcuts, and clean-file closing
+
+**Request:** Reveal a three-dot actions button when hovering a note tab, show the same actions as the right-click menu, close already-saved files without an extra warning, and provide sensible keyboard shortcuts for every action.
+
+**Implementation:** `Workspace.swift` now builds both the right-click and hover-button menus from one definition. `NoteListView.swift` adds a row-hover cell with an accessible ellipsis button. Actions target the hovered/right-clicked note while keyboard commands fall back to the selected note. A new Note application menu makes the shortcuts global: Pin ⌘⌃P, Duplicate ⌘D, Share ⌘⌃S, Open in New Window ⌘⇧O, and Delete/Close ⌘Delete. Clean files with a disk path close immediately and leave the file untouched; private notes and files with unsaved edits retain confirmation, with explicit data-loss wording for unsaved edits. `main.swift` adds the Note menu, `NoteNavigationTests.swift` covers the canonical menu, shortcut assignments, and confirmation policy, and `CHANGELOG.md` records the user-facing behavior.
+
+**Verification:** The installed Xcode license remains pending, so the default build/test commands stop before compilation. With the previously verified explicit SDK/native-build workaround, the Xcode XCTest agent ran all 74 tests with zero failures, including the new note-actions test; two pre-existing tests emitted their known recovered layout-constraint warnings. The development release build and nested signature verification passed. Gracefully reopened `dist/Luna.app`, confirmed its running executable path belongs to this worktree, and confirmed all four recovery-note text fingerprints were unchanged across the final relaunch. Native UI review confirmed the new Note menu contains all five actions; automated coverage verifies their displayed key equivalents. The automation interface generates clicks rather than ordinary pointer motion, so it could not independently trigger the mouse-moved-only hover state; the row tracking implementation and accessible button were reviewed in code but the visual hover remains for user review in the open app.
+
+**Release status:** Approved for inclusion in Luna 0.8.0 with the preceding Finder-drop and Open With improvements. Publication verification is pending.
+
+## 2026-09-15 — Finder Open With registration; remote error remains unconfirmed
+
+**Request:** Support assigning files to Luna through Finder Open With. User reports Finder error 2 for a Markdown file under `~/repos` on another Mac; the file opens through Luna’s picker.
+
+**Diagnosis:** The affected directory does not exist on this Mac; user confirmed a different Mac. Native `NSWorkspace.setDefaultApplication(at:toOpenFileAt:completion:)` returned success for test files under this repo for both installed 0.7.1 and worktree builds. This API’s success alone does not prove the Finder preference persisted: a test file still displayed Cursor until assigned through Get Info. Independently exercised Finder Get Info → Open with → Luna 0.7.1 and closed the window successfully without error 2. Existing `.md` registration was already functional here. Do not claim the remote error was reproduced or fixed.
+
+**Implementation:** `Resources/Info.plist` retains existing text/source types and adds explicit Markdown extensions (`md`, `markdown`, `mdown`, `mkd`) and a separate `public.data` fallback, all ranked Alternate. `CHANGELOG.md` describes this limited registration improvement. Refreshed only this worktree app’s Launch Services registration for local review; did not reset the system database or change existing file-type defaults. Association experiments touched only generated fixtures under `.build`.
+
+**Corrections:** Initially tried `public.data` as a general fallback and then a legacy wildcard. The actual registered-app query still omitted `.ts` (classified by macOS as MPEG transport stream) and a dynamic unknown extension. Removed the wildcard and narrowed both implementation and user-facing claims. Final query offers the updated app for `.md`, `.txt`, Makefile, and `.env`; `.env` was absent before. Unknown dynamic types and `.ts` may still require Open With → Other → All Applications. File decoding remains UTF-8/UTF-16 text only, with the existing 100 MB limit.
+
+**Verification:** `Scripts/build.sh` passed using the previous entry’s installed-toolchain/native-build workaround; app and nested signatures verified. Plist validation, 4 release-tool tests, and `git diff --check` passed. No Swift behavior changed, so did not rerun the 73 tests already passed in the preceding change. Gracefully reopened `dist/Luna.app`, confirmed its running executable path, and verified all four prior note-text fingerprints were unchanged. Prepared `dist/Luna-open-with-preview.zip` for optional transfer to the affected Mac. Preview retains development-build status; not a Sparkle release.
+
+**Remaining limitation / release status:** The specific error 2 is unresolved without reproduction on the other Mac. No permission changes, file-content edits, forced defaults, installed-app replacement, commit, push, or release. The preview also includes the preceding Finder-drop changes. Apple’s declaration reference: https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html#//apple_ref/doc/uid/TP40009249-SW1
+
+## 2026-09-15 — Open Finder file drops
+
+**Request:** Drag any files from Finder into Luna to open them.
+
+**Implementation:** File URLs now use the existing `Workspace.open` path instead of the media importer. The editor, live media view, Markdown preview, notes sidebar, and root content view accept file drops. Multiple files and arbitrary extensions are accepted; existing open files are selected without duplication, and existing note contents are preserved. Sidebar note reordering retains its internal move behavior. WebKit file drops no longer navigate the preview or insert attachments.
+
+**Files:** `Sources/Luna/FileDrop.swift`, `EditorView.swift`, `MediaNoteView.swift`, `MarkdownPreview.swift`, `Workspace.swift`, `Tests/LunaTests/FileDropTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** All 73 XCTest tests passed, including two new tests covering pasteboard file extraction, non-file drags, multiple files, unusual extensions, content callbacks, duplicate selection, sidebar registration, and original-note recovery. Release build and nested code-signature verification passed. Default tools were blocked by a pending Xcode license and mismatched tool components; used the installed Xcode Swift binary with the native build system and macOS 26.5 SDK, plus explicit XCTest framework/overlay paths. SwiftPM discovered zero XCTest cases in this configuration, so ran the compiled bundle directly with Xcode’s `xctest` agent: 73 executed, zero failures. No system configuration changes or agreement acceptance. Gracefully quit/reopened `dist/Luna.app`; verified the running executable belongs to this worktree and matches the release binary. Accessibility confirms recovered notes, and all four preexisting note-text SHA-256 fingerprints match. `git diff --check` passed. Finder pointer-drag routing was not manually exercised; automated coverage checks extraction and destination callbacks.
+
+**Limitations and release status:** Local implementation only; no publication. Open retains its UTF-8/UTF-16 and 100 MB limits; binary files and unsupported encodings show the existing error. Finder drops replace the former inline media-import gesture. Updated local development app is open for review.
+
 ## 2026-09-14 — Lead README with support and demo
 
 **Request:** Put Buy Me a Coffee at the top and use the hero video as the first README visual.
@@ -21,6 +57,38 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 **Verification:** All README local links resolve; SHA-256 comparisons confirm every copied asset matches the reviewed portfolio original. The previous capture task reviewed all four screenshots, poster, and the complete 1,040-frame recording. `git diff --check` passed. No app behavior changed, so application tests were not rerun.
 
 **Publication:** Prepared on top of origin/main after the 0.7.1 release commits, with unrelated local work preserved in the original checkout. Documentation-only push; no version tag, application release, or portfolio website deployment.
+
+## 2026-09-14 — Portfolio desktop media refresh
+
+**Request:** Replace gray window-only portfolio visuals and sampled demo with authentic desktop-composited screenshots, a smooth silent calculation-to-presentation recording, and a matching poster; preserve real notes/settings and do not change or deploy the website.
+
+**Result:** Added four lossless WebP desktop screenshots, one lossless WebP video poster, and an 18.008-second H.264 MP4 under `/Users/elishaterada/repos/elishaterada-com/portfolio-handoffs/luna/assets/desktop/`. Updated that handoff’s `assets.md` with filenames, captions, alt text, dimensions, timing, provenance, and limitations. All assets are 2674 × 1780 native pixels. Video preserves variable timestamps, 1,040 frames, average 57.75 fps; no interpolation or upscaling.
+
+**Implementation:** Native macOS desktop-region capture at 96,52,1337,890 logical points on the 2× display, around a fixed 1177 × 770 window with 80/60-point padding. Actual blue wallpaper influences the window materials; native shadow retained. Existing isolated 0.7.0 demo bundle and fictional workshop notes reused. No real user notes/settings, app source, or website implementation changed. Markdown preview captured at 16 pt to show the full table and quotation; demo font restored to 20 pt. Presentation uses its natural 26 pt.
+
+**Corrections and verification:** First recording excluded the final transitions because tool round trips exceeded its duration; replaced with a timed continuous take and trimmed only start/end. First Markdown still clipped the table; recaptured through native font controls. Reviewed every screenshot/poster and all 1,040 video frames via sequential contact sheets, plus large state images. Blue materials remain visible, framing is stable, no unrelated windows/Dock/desktop icons/notifications/private content appear. WebPs decode at intended dimensions; first three are pixel-identical to source PNGs. Video fully decodes, H.264 with no audio. No application tests needed for media/documentation work.
+
+**Remaining limitation and release status:** The native purple capture/privacy indicator and pointer remain visible, including in the hero reference; no retouching used. This does not satisfy an absolutely indicator-free requirement. VFR average is not constant 60/120 fps. Local handoff assets only; no commit, push, release, or website deployment. Existing unrelated changes preserved.
+
+## 2026-09-13 — Portfolio handoff for elishaterada.com
+
+**Request:** Prepare an evidence-backed portfolio story and real product visuals, without editing or deploying the website.
+
+**Result:** Created /Users/elishaterada/repos/elishaterada-com/portfolio-handoffs/luna/ with portfolio-handoff.md, assets.md, a public release-metadata snapshot, six WebP images, and a 15-second silent MP4. Reviewed current documentation, relevant code, reachable commits, five accessible project tasks, and public release metadata. Distinguished confirmed facts, editorial interpretations, unknown adoption, and historical versus current verification. First-person drafts meet requested lengths; one proposed personal-learning statement is flagged for confirmation.
+
+**Visuals:** Five new native captures show a fictional workshop calculation, acceptance, presentation, URL chooser, and Markdown guide. Reused the existing same-version desktop-composited screenshot as recommended cover. Used the pre-existing isolated README demo workspace; added only fictional demo notes. Demo executable matches installed 0.7.0 byte-for-byte. No real notes, product code, or website implementation changed.
+
+**Verification:** All local handoff links resolve; images decode as WebP; video is H.264, 1268 × 768, 4 fps, 15 seconds, with no audio. Reviewed image composition and encoded demo states. Card/overview/story have 46/120/520 words. Confirmed public latest release is 0.7.0; recorded raw artifact download counts without treating them as users. App/release tests were not rerun for this documentation-only change.
+
+**Limits and release status:** Local handoff only; no commit, push, app release, or deployment. Native capture returned 1267-pixel window images and a smaller dialog, below the preferred 1600 width; no artificial upscaling. New window captures show gray glass rather than desktop compositing; existing cover supplies authentic wallpaper context. Video is a 4-fps sampled interaction recording, not performance evidence. Personal takeaway, attribution preferences, external usage, and future direction need author confirmation. Existing unrelated changes were preserved.
+
+## 2026-09-13 — GitHub Support purge request submitted
+
+**Request:** Submit the prepared sensitive-data cleanup request to GitHub Support after explicit user authorization.
+
+**Action and verification:** Submitted through the authenticated personal-account GitHub Support form. Included repository, first changed commit, old commit references, rewritten main and 11 tags, zero affected pull requests, no LFS objects, and the confirmed residual API access. The request explicitly asks to purge removed historical content, not delete the repository; it reproduces no private note content. GitHub displayed “Your message has been successfully submitted.”
+
+**Status:** Submitted, awaiting Support review and server-side purge. The ticket portal initially reported that new tickets may take a few minutes to appear; no ticket number was available at submission time. This entry records submission, not completed removal of GitHub’s cached content. No application code or release artifacts changed.
 
 ## 2026-09-14 — Release 0.7.1 licensing and voluntary support
 

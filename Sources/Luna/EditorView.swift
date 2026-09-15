@@ -91,7 +91,7 @@ final class EditorView: NSTextView {
             needsDisplay = true
         } else { super.cancelOperation(sender) }
     }
-    var onMediaDrop: (([URL], NSRange) -> Void)?
+    var onFileDrop: (([URL]) -> Void)?
     var onEmbedPaste: ((String) -> Void)?
     override func paste(_ sender: Any?) {
         if let value = NSPasteboard.general.string(forType: .string),
@@ -144,21 +144,20 @@ final class EditorView: NSTextView {
         sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if let files = files(sender), !files.isEmpty, onMediaDrop != nil { return .copy }
+        if let files = files(sender), !files.isEmpty, onFileDrop != nil { return .copy }
         return super.draggingEntered(sender)
     }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if let files = files(sender), !files.isEmpty, onMediaDrop != nil { return .copy }
+        if let files = files(sender), !files.isEmpty, onFileDrop != nil { return .copy }
         return super.draggingUpdated(sender)
     }
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        if let files = files(sender), !files.isEmpty, onMediaDrop != nil { return true }
+        if let files = files(sender), !files.isEmpty, onFileDrop != nil { return true }
         return super.prepareForDragOperation(sender)
     }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let files = files(sender), !files.isEmpty, let onMediaDrop else { return super.performDragOperation(sender) }
-        let position = characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil))
-        onMediaDrop(files, NSRange(location: position, length: 0)); return true
+        guard let files = files(sender), !files.isEmpty, let onFileDrop else { return super.performDragOperation(sender) }
+        onFileDrop(files); return true
     }
 
     override var string: String { didSet { resetCurrencySuggestion(); needsDisplay = true } }

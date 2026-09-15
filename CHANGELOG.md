@@ -1,5 +1,13 @@
 # Luna release notes
 
+## 0.8.0 — 2026-09-15
+
+- Hover over a note tab to reveal its actions menu. Pin, duplicate, share, open in a new window, and close or delete actions now show keyboard shortcuts; clean saved files close without a confirmation dialog.
+
+- Improved Finder Open With registration for Markdown and unclassified files such as `.env`. Existing default apps remain unchanged.
+
+- Drag files from Finder onto Luna to open them, including multiple files and files without a familiar extension. Drops work in the editor, previews, and notes sidebar.
+
 ## 0.7.1 — 2026-09-14
 
 - Luna’s original code and documentation are now available under the MIT License. Third-party components retain their existing licenses.

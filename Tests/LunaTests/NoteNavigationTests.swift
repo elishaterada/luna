@@ -4,6 +4,29 @@ import LunaCore
 @testable import Luna
 
 final class NoteNavigationTests: XCTestCase {
+    @MainActor func testNoteActionsExposeShortcutsAndCleanFilesCloseWithoutConfirmation() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
+                                  skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+
+        let menu = workspace.makeNoteActionsMenu()
+        XCTAssertEqual(menu.items.map(\.title), ["Pin", "Duplicate", "Share…", "Open in New Window", "Delete Note…"])
+        XCTAssertEqual(menu.items.map(\.keyEquivalent), ["p", "d", "s", "o", "\u{8}"])
+        XCTAssertEqual(menu.items.map(\.keyEquivalentModifierMask), [
+            [.command, .control], .command, [.command, .control], [.command, .shift], .command
+        ])
+
+        var cleanFile = Note(text: "Saved", path: root.appendingPathComponent("saved.md").path)
+        cleanFile.dirty = false
+        XCTAssertFalse(Workspace.requiresCloseConfirmation(cleanFile))
+        cleanFile.dirty = true
+        XCTAssertTrue(Workspace.requiresCloseConfirmation(cleanFile))
+        XCTAssertTrue(Workspace.requiresCloseConfirmation(Note(text: "Private")))
+    }
+
     @MainActor func testPinsDuplicatesAndSharedWindows() throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
