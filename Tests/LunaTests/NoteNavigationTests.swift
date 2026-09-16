@@ -4,6 +4,77 @@ import LunaCore
 @testable import Luna
 
 final class NoteNavigationTests: XCTestCase {
+    @MainActor func testThreeDotDeleteTargetsItsRowWithoutRightClick() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
+            skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        let selected = try XCTUnwrap(workspace.selectedID)
+        let file = root.appendingPathComponent("popup-target.txt")
+        try "Keep on disk".write(to: file, atomically: true, encoding: .utf8)
+        let target = Note(text: "Keep on disk", path: file.path)
+        workspace.notes.append(target); workspace.reloadShelf()
+        workspace.showWindow(nil)
+        let cell = try XCTUnwrap(workspace.table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NoteCellView)
+        cell.actionsButton.isHidden = false
+        var invoked = false
+        let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
+            object: nil, queue: .main) { notification in
+            guard let menu = notification.object as? NSMenu,
+                  menu.items.last?.action == #selector(Workspace.deleteClickedNote) else { return }
+            DispatchQueue.main.async {
+                invoked = true
+                menu.cancelTracking()
+                menu.performActionForItem(at: menu.numberOfItems - 1)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        XCTAssertEqual(workspace.table.clickedRow, -1)
+        NSApp.sendAction(try XCTUnwrap(cell.actionsButton.action), to: cell.actionsButton.target, from: cell.actionsButton)
+        XCTAssertTrue(invoked)
+        XCTAssertFalse(workspace.notes.contains { $0.id == target.id })
+        XCTAssertEqual(workspace.selectedID, selected)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "Keep on disk")
+    }
+
+    @MainActor func testDeleteActionWithoutRightClickClosesSelectedCleanFile() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
+            skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        let file = root.appendingPathComponent("saved.txt")
+        try "Keep on disk".write(to: file, atomically: true, encoding: .utf8)
+        var saved = Note(text: "Keep on disk", path: file.path)
+        saved.dirty = false
+        workspace.notes = [saved]
+        workspace.reloadShelf(); workspace.select(saved.id)
+        let id = try XCTUnwrap(workspace.selectedID)
+        XCTAssertEqual(workspace.table.clickedRow, -1)
+        let menu = workspace.makeNoteActionsMenu()
+        menu.performActionForItem(at: menu.numberOfItems - 1)
+        XCTAssertFalse(workspace.notes.contains { $0.id == id })
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "Keep on disk")
+
+        workspace.notes = [saved]
+        workspace.reloadShelf(); workspace.select(saved.id, focusContent: true)
+        let backspace = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: .command, timestamp: 0, windowNumber: workspace.window!.windowNumber,
+            context: nil, characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", isARepeat: false, keyCode: 51))
+        XCTAssertTrue(menu.performKeyEquivalent(with: backspace))
+        XCTAssertFalse(workspace.notes.contains { $0.id == saved.id })
+
+        // NSTextView has a built-in Command-Backspace binding; the window must intercept it.
+        workspace.notes = [saved]
+        workspace.reloadShelf(); workspace.select(saved.id, focusContent: true)
+        workspace.window?.sendEvent(backspace)
+        XCTAssertFalse(workspace.notes.contains { $0.id == saved.id })
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "Keep on disk")
+    }
+
     @MainActor func testNumberShortcutsFollowShelfOrderAndPreserveEdits() throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -48,7 +119,7 @@ final class NoteNavigationTests: XCTestCase {
 
         let menu = workspace.makeNoteActionsMenu()
         XCTAssertEqual(menu.items.map(\.title), ["Pin", "Duplicate", "Share…", "Open in New Window", "Delete Note…"])
-        XCTAssertEqual(menu.items.map(\.keyEquivalent), ["p", "d", "s", "o", "\u{8}"])
+        XCTAssertEqual(menu.items.map(\.keyEquivalent), ["p", "d", "s", "o", "\u{7f}"])
         XCTAssertEqual(menu.items.map(\.keyEquivalentModifierMask), [
             [.command, .control], .command, [.command, .control], [.command, .shift], .command
         ])

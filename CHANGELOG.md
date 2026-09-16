@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.9.1 — 2026-09-16
+
+- Fixed Delete Note in the three-dot menu and ⌘Backspace. The shortcut now acts on the selected note without deleting editor text.
+
 ## 0.9.0 — 2026-09-16
 
 - Switch to the first nine notes with ⌘1–⌘9. Hold Command for one second to reveal inline shortcut reminders in the sidebar.

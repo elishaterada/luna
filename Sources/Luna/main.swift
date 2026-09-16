@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item(note, "Duplicate", #selector(Workspace.duplicateClickedNote), "d")
         item(note, "Share…", #selector(Workspace.shareClickedNote), "s", [.command, .control])
         item(note, "Open in New Window", #selector(Workspace.openClickedNoteInWindow), "o", [.command, .shift])
-        item(note, "Delete Note…", #selector(Workspace.deleteClickedNote), "\u{8}")
+        item(note, "Delete Note…", #selector(Workspace.deleteNote), "\u{7f}")
         let edit = submenu("Edit")
         item(edit, "Undo", Selector(("undo:")), "z"); item(edit, "Redo", Selector(("redo:")), "z", [.command, .shift])
         edit.addItem(.separator()); item(edit, "Cut", #selector(NSText.cut(_:)), "x"); item(edit, "Copy", #selector(NSText.copy(_:)), "c")

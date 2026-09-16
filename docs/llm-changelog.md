@@ -2,6 +2,18 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-09-16 — Correct Delete Note menu targeting and Command-Backspace
+
+**Request:** Delete Note does nothing in the three-dot menu, although right-click works; ⌘Backspace also does nothing.
+
+**Diagnosis and corrections:** A failing regression dispatched the canonical menu's delete action without a right-click and confirmed the note remained. `deleteClickedNote` checked only `table.clickedRow`, ignoring the hover menu's `actionNoteID` and selection fallback. It now uses `clickedNoteID`, consistent with its menu validation and sibling actions. A second regression showed the old U+0008 menu equivalent did not match the native U+007F Backspace event; both menus now use U+007F. Native isolated review then found NSTextView could still consume ⌘Backspace as delete-to-start-of-line. `NoteShortcutWindow` now intercepts Command-only key code 51 before editor dispatch and calls `deleteNote` for the selected note. The main Note menu also targets `deleteNote`, avoiding a stale right-click row, with shared dynamic Delete/Close validation.
+
+**Files:** `Workspace.swift`, `main.swift`, `NoteShortcutWindow.swift`, `NoteNavigationTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** The original no-right-click regression failed before the targeting correction and passed afterward; the native key-equivalent test likewise failed before its binding correction. A real pop-up menu tracking test invokes the ellipsis button for an unselected clean file and verifies only that target closes, selected note remains selected, and file contents remain on disk. Tests also exercise Command-Backspace through both NSMenu and the NSWindow event path with editor focus. Isolated native UI review confirmed the final shortcut opens the correct private-note confirmation and Cancel leaves its text unchanged. All 77 XCTest cases passed (62 Luna, 15 LunaCore). Development release build and nested code-signature checks passed. Gracefully reopened this worktree’s `dist/Luna.app`, confirmed its running executable and matching release-binary UUID, and verified both existing recovery-note text fingerprints are unchanged. `git diff --check` passed.
+
+**Release status:** User confirmed the correction works and authorized release 0.9.1. Release preflight passed: all 77 Swift tests, 4 release-tool tests, stable version ordering, release build, nested signatures, and diff checks. Publication and installed-update verification are pending. Private-note and unsaved-file confirmation policies remain in effect.
+
 ## 2026-09-16 — Numbered note navigation and held-Command hints
 
 **Request:** Switch notes with Command-number and show Warp-style inline reminders after holding Command for one second.

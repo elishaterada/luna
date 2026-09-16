@@ -85,6 +85,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         let window = NoteShortcutWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 740),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: window)
+        window.deleteSelectedNote = { [weak self] in self?.deleteNote() }
         window.selectNoteNumber = { [weak self] number in self?.selectNote(number: number) ?? false }
         window.showShortcutHints = { [weak self] visible in self?.table.showsShortcutHints = visible }
         let dropRoot = FileDropView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
@@ -350,7 +351,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             ("Duplicate", #selector(duplicateClickedNote), "d", .command),
             ("Share…", #selector(shareClickedNote), "s", [.command, .control]),
             ("Open in New Window", #selector(openClickedNoteInWindow), "o", [.command, .shift]),
-            ("Delete Note…", #selector(deleteClickedNote), "\u{8}", .command)
+            ("Delete Note…", #selector(deleteClickedNote), "\u{7f}", .command)
         ]
         for (title, action, key, modifiers) in actions {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -766,8 +767,8 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         confirmDeletion(selectedID)
     }
     @objc func deleteClickedNote() {
-        guard notes.indices.contains(table.clickedRow) else { return }
-        confirmDeletion(notes[table.clickedRow].id)
+        guard let id = clickedNoteID else { return }
+        confirmDeletion(id)
     }
     private func confirmDeletion(_ id: UUID) {
         guard let note = notes.first(where: { $0.id == id }) else { return }
@@ -799,12 +800,12 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             if item.action == #selector(pinClickedNote) { item.title = note.isPinned ? "Unpin" : "Pin" }
             return true
         }
-        if item.action == #selector(deleteClickedNote) {
-            guard let id = clickedNoteID, let note = notes.first(where: { $0.id == id }) else { return false }
+        if item.action == #selector(deleteClickedNote) || item.action == #selector(deleteNote) {
+            let targetID = item.action == #selector(deleteNote) ? selectedID : clickedNoteID
+            guard let id = targetID, let note = notes.first(where: { $0.id == id }) else { return false }
             item.title = note.path == nil ? "Delete Note…" : (note.dirty ? "Close Tab…" : "Close Tab")
             return true
         }
-        if item.action == #selector(deleteNote) { return index != nil }
         if item.action == #selector(toggleMarkdownPreview) {
             item.state = previewing ? .on : .off
             return index.map { notes[$0].language == "Markdown" || NoteEmbeds.hasContent(notes[$0].text) || richEditing } ?? false

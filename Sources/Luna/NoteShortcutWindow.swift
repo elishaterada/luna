@@ -2,6 +2,7 @@ import AppKit
 
 /// Keep shortcuts scoped to this workspace, including when its editor or preview has focus.
 final class NoteShortcutWindow: NSWindow {
+    var deleteSelectedNote: (() -> Void)?
     var selectNoteNumber: ((Int) -> Bool)?
     var showShortcutHints: ((Bool) -> Void)?
     private var hintTimer: Timer?
@@ -14,6 +15,11 @@ final class NoteShortcutWindow: NSWindow {
 
     private func handleNoteShortcut(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if attachedSheet == nil, modifiers == .command, event.keyCode == 51,
+           let deleteSelectedNote {
+            deleteSelectedNote()
+            return true
+        }
         if attachedSheet == nil, modifiers == .command,
            let characters = event.charactersIgnoringModifiers, characters.count == 1,
            let number = Int(characters), (1...9).contains(number),
