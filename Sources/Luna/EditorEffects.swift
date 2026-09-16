@@ -82,7 +82,7 @@ final class EditorEffectsView: NSView {
         self.impactStrength = strength
         self.glow = glow; self.shake = shake; self.sound = sound; self.returnPulse = returnPulse
         ambient.isHidden = !glow
-        if !glow && !returnPulse { pulse.removeAllAnimations() }
+        if !returnPulse { pulse.removeAllAnimations() }
         if sound { soundPlayer.configure(profile: soundProfile, volume: volume) }
         else { soundPlayer.stop() }
         refreshMonitor()
@@ -108,14 +108,14 @@ final class EditorEffectsView: NSView {
 
     private func refreshMonitor() {
         if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
-        guard window != nil, glow || shake || sound || returnPulse else { return }
+        guard window != nil, shake || sound || returnPulse else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             self?.feedback(for: event)
             return event
         }
     }
 
-    private func feedback(for event: NSEvent) {
+    func feedback(for event: NSEvent) {
         guard let window, event.window === window, window.isKeyWindow,
               window.attachedSheet == nil,
               EditorPreferences.isTypingFeedbackEvent(characters: event.characters,
@@ -128,11 +128,11 @@ final class EditorEffectsView: NSView {
         lastFeedback = now
         if sound { soundPlayer.play(isReturn: isReturn) }
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        if glow || (returnPulse && isReturn) {
+        if returnPulse && isReturn {
             let animation = CABasicAnimation(keyPath: "opacity")
-            animation.fromValue = returnPulse && isReturn ? 1 : 0.35
+            animation.fromValue = 1
             animation.toValue = 0
-            animation.duration = returnPulse && isReturn ? 0.5 : 0.18
+            animation.duration = 0.5
             animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
             pulse.add(animation, forKey: "typing")
         }

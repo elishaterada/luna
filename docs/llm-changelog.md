@@ -2,6 +2,18 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-09-16 — Keep ambient glow steady while typing
+
+**Request:** Ambient Glow still produces a background flash toward the right on every keystroke.
+
+**Diagnosis / correction:** `EditorEffectsView.feedback` explicitly animated a second, right-anchored radial gradient whenever glow was enabled, independently of Return Pulse. Ambient Glow now controls only the steady gradient and does not install a keyboard monitor by itself. Only Return Pulse animates the second gradient on Return / keypad Enter. Disabling Return Pulse removes an in-flight animation even when Ambient Glow remains enabled.
+
+**Files:** `Sources/Luna/EditorEffects.swift`, `Tests/LunaTests/EditorEffectsTests.swift`, `CHANGELOG.md`.
+
+**Verification:** Added a regression invoking the actual feedback handler with native key events and an editor responder; a test window overrides key status for deterministic focus without activating a test app. Before the fix, the test failed on ordinary typing, Return with glow alone, and disabling an active pulse. After the fix all 78 XCTest cases passed. The handler is now internal to permit this integration seam. This checks the actual Core Animation pulse rather than screenshot timing. Development release build and nested signature verification passed. Gracefully quit and opened this worktree’s `dist/Luna.app`; verified its running executable path and matching Mach-O UUID with `.build/release/Luna` (packaging changes the code signature). Both existing recovery-note text fingerprints remained unchanged. `git diff --check` passed.
+
+**Release status / limits:** User confirmed the visual improvement and authorized shipping 0.9.2. Release preflight passed: 78 Swift tests, 4 release-tool tests, stable version ordering, development release build, nested signatures, and diff checks. Publication and installed-update verification pending.
+
 ## 2026-09-16 — Correct Delete Note menu targeting and Command-Backspace
 
 **Request:** Delete Note does nothing in the three-dot menu, although right-click works; ⌘Backspace also does nothing.

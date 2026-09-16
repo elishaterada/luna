@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.9.2 — 2026-09-16
+
+- Ambient Glow now stays steady while typing; flashes occur only when Return Pulse is enabled and Return is pressed.
+
 ## 0.9.1 — 2026-09-16
 
 - Fixed Delete Note in the three-dot menu and ⌘Backspace. The shortcut now acts on the selected note without deleting editor text.
