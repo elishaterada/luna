@@ -82,9 +82,11 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             URL(fileURLWithPath: $0).appendingPathComponent("Skins", isDirectory: true)
         }
         skins = skinLibrary ?? skinRoot.map { SkinLibrary(root: $0) } ?? SkinLibrary()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 740),
+        let window = NoteShortcutWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 740),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: window)
+        window.selectNoteNumber = { [weak self] number in self?.selectNote(number: number) ?? false }
+        window.showShortcutHints = { [weak self] visible in self?.table.showsShortcutHints = visible }
         let dropRoot = FileDropView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
         dropRoot.onFileDrop = { [weak self] urls in self?.openDroppedFiles(urls) }
         window.contentView = dropRoot
@@ -254,6 +256,14 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
     }
 
+    @discardableResult func selectNote(number: Int) -> Bool {
+        guard (1...9).contains(number), notes.indices.contains(number - 1) else { return false }
+        let id = notes[number - 1].id
+        if id != selectedID { select(id, focusContent: window?.firstResponder !== table) }
+        if let index { table.scrollRowToVisible(index) }
+        return true
+    }
+
     func reloadShelf() {
         reloadingShelf = true
         table.reloadData()
@@ -304,24 +314,28 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let note = notes[row]
         let cell = NoteCellView()
+        cell.shortcutLabel.stringValue = row < 9 ? "⌘\(row + 1)" : ""
+        cell.showsShortcutHint = table.showsShortcutHints && row < 9
         cell.toolTip = note.path ?? note.title
         let title = Theme.label((note.isPinned ? "📌 " : "") + note.title, size: 13, color: Theme.text, weight: .medium)
         let edited = Theme.label(note.path != nil && note.dirty ? "●" : "", size: 8, color: Theme.mint)
         edited.setAccessibilityLabel(note.path != nil && note.dirty ? "Unsaved changes" : "")
         let actions = cell.actionsButton
-        actions.isHidden = table.hoveredRow != row
+        actions.isHidden = cell.showsShortcutHint || table.hoveredRow != row
         actions.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Note actions")
         actions.imagePosition = .imageOnly; actions.isBordered = false
         actions.toolTip = "Note actions"; actions.setAccessibilityLabel("Actions for \(note.title)")
         actions.identifier = NSUserInterfaceItemIdentifier(note.id.uuidString)
         actions.target = self; actions.action = #selector(showNoteActions(_:))
-        for view in [title, edited, actions] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
+        for view in [title, edited, actions, cell.shortcutLabel] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
         NSLayoutConstraint.activate([
             title.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 12),
             title.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             title.trailingAnchor.constraint(lessThanOrEqualTo: edited.leadingAnchor, constant: -8),
             edited.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -4),
             edited.centerYAnchor.constraint(equalTo: cell.centerYAnchor), edited.widthAnchor.constraint(equalToConstant: 8),
+            cell.shortcutLabel.trailingAnchor.constraint(equalTo: actions.trailingAnchor),
+            cell.shortcutLabel.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             actions.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
             actions.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             actions.widthAnchor.constraint(equalToConstant: 28), actions.heightAnchor.constraint(equalToConstant: 28)

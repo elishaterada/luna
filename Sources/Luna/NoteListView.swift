@@ -1,13 +1,22 @@
 import AppKit
 
 final class NoteListView: NSTableView {
+    var showsShortcutHints = false {
+        didSet {
+            for row in 0..<numberOfRows {
+                guard let cell = view(atColumn: 0, row: row, makeIfNecessary: false) as? NoteCellView else { continue }
+                cell.showsShortcutHint = showsShortcutHints && row < 9
+                cell.actionsButton.isHidden = cell.showsShortcutHint || row != hoveredRow
+            }
+        }
+    }
     var focusContent: (() -> Void)?
     private var hoverTracking: NSTrackingArea?
     private(set) var hoveredRow = -1 {
         didSet {
             guard hoveredRow != oldValue else { return }
             for row in [oldValue, hoveredRow] where row >= 0 {
-                (view(atColumn: 0, row: row, makeIfNecessary: false) as? NoteCellView)?.actionsButton.isHidden = row != hoveredRow
+                (view(atColumn: 0, row: row, makeIfNecessary: false) as? NoteCellView)?.actionsButton.isHidden = (showsShortcutHints && row < 9) || row != hoveredRow
             }
         }
     }
@@ -35,10 +44,15 @@ final class NoteListView: NSTableView {
 
 final class NoteCellView: NSTableCellView {
     let actionsButton = NSButton()
+    let shortcutLabel = Theme.label("", size: 12)
+    var showsShortcutHint = false {
+        didSet { shortcutLabel.isHidden = !showsShortcutHint }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         actionsButton.isHidden = true
+        shortcutLabel.isHidden = true
     }
 
     required init?(coder: NSCoder) { fatalError() }

@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.9.0 — 2026-09-16
+
+- Switch to the first nine notes with ⌘1–⌘9. Hold Command for one second to reveal inline shortcut reminders in the sidebar.
+
 ## 0.8.0 — 2026-09-15
 
 - Hover over a note tab to reveal its actions menu. Pin, duplicate, share, open in a new window, and close or delete actions now show keyboard shortcuts; clean saved files close without a confirmation dialog.

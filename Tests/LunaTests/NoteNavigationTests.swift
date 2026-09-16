@@ -4,6 +4,40 @@ import LunaCore
 @testable import Luna
 
 final class NoteNavigationTests: XCTestCase {
+    @MainActor func testNumberShortcutsFollowShelfOrderAndPreserveEdits() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
+        let workspace = Workspace(store: store,
+            skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        workspace.newNote()
+        let editedID = try XCTUnwrap(workspace.selectedID)
+        workspace.editor.string = "Keep this unsaved note"
+        workspace.textDidChange(Notification(name: NSText.didChangeNotification))
+        let target = workspace.notes[1].id
+        let window = try XCTUnwrap(workspace.window as? NoteShortcutWindow)
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "2",
+            charactersIgnoringModifiers: "2", isARepeat: false, keyCode: 19))
+        XCTAssertTrue(window.performKeyEquivalent(with: event))
+        XCTAssertEqual(workspace.selectedID, target)
+        XCTAssertEqual(try store.load().first(where: { $0.id == editedID })?.text, "Keep this unsaved note")
+        workspace.togglePin(target)
+        XCTAssertTrue(workspace.selectNote(number: 1))
+        XCTAssertEqual(workspace.selectedID, target)
+        XCTAssertFalse(workspace.selectNote(number: 9))
+        XCTAssertFalse(workspace.selectNote(number: 0))
+        workspace.table.showsShortcutHints = true
+        let cell = try XCTUnwrap(workspace.tableView(workspace.table, viewFor: nil, row: 0) as? NoteCellView)
+        XCTAssertEqual(cell.shortcutLabel.stringValue, "⌘1")
+        XCTAssertFalse(cell.shortcutLabel.isHidden)
+        XCTAssertTrue(cell.actionsButton.isHidden)
+        window.resetShortcutHints()
+        XCTAssertFalse(workspace.table.showsShortcutHints)
+    }
+
     @MainActor func testNoteActionsExposeShortcutsAndCleanFilesCloseWithoutConfirmation() throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

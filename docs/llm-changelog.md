@@ -2,6 +2,18 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-09-16 — Numbered note navigation and held-Command hints
+
+**Request:** Switch notes with Command-number and show Warp-style inline reminders after holding Command for one second.
+
+**Implementation:** `NoteShortcutWindow.swift` scopes ⌘1–⌘9 to each workspace window and schedules a one-second common-run-loop timer for Command alone. Hints reset on modifier release/change, key-window loss, and close; sheets suppress navigation and hint activation. `Workspace.swift` maps numbers to the current pinned/reordered shelf order, uses the existing recovery-aware selection path, preserves editor/list focus, and scrolls the selected row into view. `NoteListView.swift` displays muted inline labels in the existing action-button space for the first nine rows, restoring hover actions afterward. `CHANGELOG.md` adds an Unreleased highlight.
+
+**Correction:** Added shortcut handling to the window's key-down event path as well as key equivalents after the first running-app check did not switch notes. Final rebuilt app successfully switched to the second row using ⌘2.
+
+**Verification:** All 75 XCTest cases passed (60 Luna and 15 LunaCore). New `NoteNavigationTests.swift` coverage checks numbered selection, pinned order, unavailable numbers, recovered unsaved edits, label/action visibility, and hint reset. Development release build and nested code-signature verification passed. Gracefully quit and reopened `dist/Luna.app`; verified the running executable is this worktree's app and all four recovery-note text fingerprints remain unchanged. Native UI confirmed ⌘2 selects the second note. `git diff --check` passed.
+
+**User review / release status:** User confirmed the feature works and authorized shipping as 0.9.0. Only the first nine notes have numeric shortcuts; hidden sidebars remain hidden. Release preflight passed: 75 Swift tests, 4 release-tool tests, stable version ordering, release build, nested signatures, and diff checks. Publication and installed-update verification are pending.
+
 ## 2026-09-15 — Hover note actions, shortcuts, and clean-file closing
 
 **Request:** Reveal a three-dot actions button when hovering a note tab, show the same actions as the right-click menu, close already-saved files without an extra warning, and provide sensible keyboard shortcuts for every action.
