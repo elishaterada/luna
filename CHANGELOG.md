@@ -1,5 +1,10 @@
 # Luna release notes
 
+## 0.9.4 — 2026-09-22
+
+- Tab and Shift-Tab now indent or outdent all selected list items without replacing their content.
+- Selecting a wrapped list item after scrolling now keeps text and selection aligned, without overlapping adjacent lines.
+
 ## 0.9.3 — 2026-09-22
 
 - Markdown Preview now renders editor bullet lists as separate, properly nested list items.

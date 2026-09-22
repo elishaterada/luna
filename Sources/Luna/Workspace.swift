@@ -175,6 +175,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         presentationButton = Theme.button("play.rectangle", label: "Enter presentation mode (⌘⇧P)", target: self, action: #selector(togglePresentation), title: "Present", width: 92)
         previewButton = Theme.button("", label: "Preview Markdown (⌘⇧M)", target: self, action: #selector(toggleMarkdownPreview), title: "Preview", width: 76)
         let documentActions = NSStackView(views: [previewButton, presentationButton]); documentActions.spacing = 8
+        editor.configureListLayout()
         scroll.documentView = editor; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         scroll.drawsBackground = false; scroll.borderType = .noBorder
         editor.isRichText = false; editor.importsGraphics = false; editor.allowsUndo = true

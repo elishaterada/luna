@@ -1,7 +1,13 @@
 import AppKit
 
 final class EditorView: NSTextView {
-    var formatsLists = true
+    var formatsLists = true {
+        didSet {
+            guard formatsLists != oldValue, let storage = textStorage else { return }
+            // Changing language changes paragraph geometry; scrolling does not.
+            storage.edited(.editedAttributes, range: NSRange(location: 0, length: storage.length), changeInLength: 0)
+        }
+    }
     private var dismissedCalculation: String?
     var exchangeRates = ExchangeRates.shared
     private var currencyTask: Task<Void, Never>?
@@ -217,26 +223,73 @@ final class EditorView: NSTextView {
         super.insertBacktab(sender)
     }
     private func indentList(outdent: Bool) -> Bool {
-        guard formatsLists, !hasMarkedText(), selectedRange().length == 0 else { return false }
+        guard formatsLists, !hasMarkedText() else { return false }
         let selection = selectedRange()
         let source = string as NSString
-        let lineRange = source.lineRange(for: selection)
-        let line = source.substring(with: lineRange)
+        // A selection ending at the next line's start does not include that line.
+        let touched = NSRange(location: selection.location, length: max(0, selection.length - 1))
+        let lineRange = source.lineRange(for: touched)
         let context = source.substring(with: NSRange(location: max(0, lineRange.location - 32_768), length: min(lineRange.location, 32_768)))
-        let fenced = context.components(separatedBy: "\n").filter {
+        var fenced = context.components(separatedBy: "\n").filter {
             let trimmed = $0.trimmingCharacters(in: .whitespaces)
             return trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~")
         }.count % 2 == 1
-        guard !fenced, NoteLists.continuation(line) != nil else { return false }
-        let indent = String(line.prefix { $0 == " " || $0 == "\t" })
-        let removed = outdent ? (indent.hasPrefix("\t") ? 1 : min(indent.prefix { $0 == " " }.count, EditorPreferences.tabWidth)) : 0
-        let added = outdent ? "" : (EditorPreferences.useTabs ? "\t" : String(repeating: " ", count: EditorPreferences.tabWidth))
-        if removed == 0 && added.isEmpty { return true }
-        insertText(added, replacementRange: NSRange(location: lineRange.location, length: removed))
-        setSelectedRange(NSRange(location: max(lineRange.location, selection.location - removed + (added as NSString).length), length: 0))
+        let replacement = NSMutableString(string: source.substring(with: lineRange))
+        var edits: [(range: NSRange, text: String)] = []
+        var foundList = false
+        var offset = lineRange.location
+        while offset < NSMaxRange(lineRange) {
+            let row = source.lineRange(for: NSRange(location: offset, length: 0))
+            let line = source.substring(with: row)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") { fenced.toggle() }
+            else if !fenced, NoteLists.continuation(line) != nil {
+                foundList = true
+                let indent = String(line.prefix { $0 == " " || $0 == "\t" })
+                let removed = outdent ? (indent.hasPrefix("\t") ? 1 : min(indent.prefix { $0 == " " }.count, EditorPreferences.tabWidth)) : 0
+                let added = outdent ? "" : (EditorPreferences.useTabs ? "\t" : String(repeating: " ", count: EditorPreferences.tabWidth))
+                if removed > 0 || !added.isEmpty {
+                    edits.append((NSRange(location: offset - lineRange.location, length: removed), added))
+                }
+            }
+            offset = NSMaxRange(row)
+        }
+        guard foundList else { return false }
+        guard !edits.isEmpty else { return true }
+        for edit in edits.reversed() { replacement.replaceCharacters(in: edit.range, with: edit.text) }
+        // One native edit keeps undo atomic and avoids reformatting unrelated rows.
+        super.insertText(replacement as String, replacementRange: lineRange)
+        if selection.length > 0 {
+            setSelectedRange(NSRange(location: lineRange.location, length: replacement.length))
+        } else {
+            let delta = replacement.length - lineRange.length
+            setSelectedRange(NSRange(location: max(lineRange.location, selection.location + delta), length: 0))
+        }
         return true
     }
 
+}
+
+// Supply geometry before TextKit lays out a paragraph. A scroll-triggered
+// highlighter must not change wrapping or invalidate the selection's line frames.
+extension EditorView: NSTextContentStorageDelegate {
+    func configureListLayout() {
+        (textLayoutManager?.textContentManager as? NSTextContentStorage)?.delegate = self
+    }
+
+    func textContentStorage(_ textContentStorage: NSTextContentStorage, textParagraphWith range: NSRange) -> NSTextParagraph? {
+        guard formatsLists, let storage = textContentStorage.textStorage,
+              range.length > 0, NSMaxRange(range) <= storage.length else { return nil }
+        // Bound prefix scanning even for a pathological megabyte-long line.
+        let prefix = (storage.string as NSString).substring(with: NSRange(location: range.location, length: min(range.length, 4096)))
+        guard let markerRange = prefix.range(of: NoteLists.pattern, options: .regularExpression) else { return nil }
+        let marker = String(prefix[markerRange])
+        let attributed = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: range))
+        let paragraph = (defaultParagraphStyle?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+        paragraph.headIndent = (marker as NSString).size(withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 18)]).width
+        attributed.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: attributed.length))
+        return NSTextParagraph(attributedString: attributed)
+    }
 }
 
 /// Color only the visible viewport plus context. No access to layoutManager:
@@ -286,34 +339,18 @@ final class SyntaxHighlighter {
         // Protect the UI from pathological megabyte-long lines and regex input.
         let range = NSRange(location: lower, length: min(upper - lower, 32_768))
         let snippet = (view.string as NSString).substring(with: range)
-        storage.beginEditing()
-        storage.addAttribute(.foregroundColor, value: Theme.text, range: range)
+        func applyColor(_ color: NSColor, in range: NSRange) {
+            guard let start = content.location(content.documentRange.location, offsetBy: range.location),
+                  let end = content.location(start, offsetBy: range.length),
+                  let textRange = NSTextRange(location: start, end: end) else { return }
+            manager.setRenderingAttributes([.foregroundColor: color], for: textRange)
+        }
+        applyColor(Theme.text, in: range)
         for (regex, color) in (EditorPreferences.syntaxColors ? rules : []) {
             regex.enumerateMatches(in: snippet, range: NSRange(location: 0, length: (snippet as NSString).length)) { match, _, _ in
                 guard let match else { return }
-                storage.addAttribute(.foregroundColor, value: color,
-                                     range: NSRange(location: range.location + match.range.location, length: match.range.length))
+                applyColor(color, in: NSRange(location: range.location + match.range.location, length: match.range.length))
             }
         }
-        if let editor = view as? EditorView, editor.formatsLists {
-            let fullLines = (view.string as NSString).lineRange(for: range)
-            let lines = NSRange(location: fullLines.location, length: min(fullLines.length, 32_768))
-            let snippet = (view.string as NSString).substring(with: lines)
-            var offset = lines.location
-            for line in snippet.components(separatedBy: "\n") {
-                let length = (line as NSString).length
-                if length > 0 {
-                    let paragraph = (view.defaultParagraphStyle?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
-                    paragraph.lineSpacing = (view.font?.pointSize ?? 18) * EditorPreferences.lineSpacing
-                    if NoteLists.continuation(line) != nil {
-                        let marker = line.range(of: NoteLists.pattern, options: .regularExpression).map { String(line[$0]) } ?? ""
-                        paragraph.headIndent = (marker as NSString).size(withAttributes: [.font: view.font ?? NSFont.systemFont(ofSize: 18)]).width
-                    }
-                    storage.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: offset, length: length))
-                }
-                offset += length + 1
-            }
-        }
-        storage.endEditing()
     }
 }

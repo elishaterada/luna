@@ -4,6 +4,41 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 
 
+
+
+## 2026-09-22 — Release 0.9.4
+
+**Request:** Ship stable scrolled selection and multi-item list indentation.
+
+**Preparation:** Updated version and release highlights to 0.9.4. Preflight passed 86 Swift tests, 4 release-tool tests, version ordering, development release build, nested signatures, and diff checks. Publication and installed-update verification pending.
+
+
+## 2026-09-22 — Indent a selected block of list items
+
+**Request:** Indenting multiple selected bullet points replaces their text with a tab; all selected items should indent instead. User called the key Shift; the text-replacement path is Tab (`insertTab`), with Shift-Tab handled by `insertBacktab`.
+
+**Diagnosis / correction:** The previous native list helper explicitly rejected nonempty selections, falling through to ordinary text insertion. Generalized it to process all touched list rows, preserve relative nesting, and apply one native replacement for atomic undo. Tab adds the configured spaces or literal tab before each list marker; Shift-Tab removes one indentation level. The resulting block remains selected for repeated indentation. A selection ending at the next line’s start excludes that next line. Partial-line selections include the touched list rows. Prose and fenced code inside a mixed selection remain unchanged.
+
+**Files:** `Sources/Luna/EditorView.swift`, `Tests/LunaTests/EditorBehaviorTests.swift`, `CHANGELOG.md`.
+
+**Verification:** The new regression failed on the original code, reproducing replacement of the selected bullets with spaces. All 86 Swift tests passed after the fix. Coverage includes bullets, numbering, checkboxes, nested items, Unicode, partial selections, next-line boundaries, spaces/tabs, outdent, fenced code/prose preservation, and undo/redo as a single edit. Existing scrolled-selection regression also passed. Development release build and nested signature verification passed. Gracefully reopened this worktree’s `dist/Luna.app`, confirmed its running executable path and matching release-binary UUID, and verified all five existing note text fingerprints were unchanged. `git diff --check` passed.
+
+**Release status / limitations:** Local development change, not published. This extends the earlier single-caret native indentation fix; live-media editing is unchanged. Shift alone remains a modifier; Tab indents and Shift-Tab outdents.
+
+## 2026-09-22 — Keep scrolled list selection aligned
+
+**Request:** Selecting a line after scrolling a long note shifts text and overlaps wrapped list rows. User confirmed selection alone triggers it.
+
+**Diagnosis:** Reproduced the exact overlap in the existing native app by partially scrolling the supplied nested-list note and triple-clicking its wrapped item. `SyntaxHighlighter.highlight` rewrote backing-store color and paragraph attributes on a delayed viewport pass. Paragraph geometry could then be rebuilt during mouse selection while neighboring fragments retained their positions. The final native mouse-event regression on the original implementation measured a 21.6-point shift in the selected line while the following line stayed put.
+
+**Implementation:** `EditorView` supplies list hanging indentation through `NSTextContentStorageDelegate` when TextKit creates each paragraph, before layout. The viewport highlighter now applies color as TextKit rendering attributes and never rewrites document attributes. Language-mode changes explicitly invalidate paragraph attributes so list layout follows the active mode. Layout remains lazy; marker inspection is capped at a 4,096 UTF-16-unit prefix. `Workspace` installs the paragraph delegate. Notes remain plain text and existing wrapping behavior is preserved.
+
+**Files:** `Sources/Luna/EditorView.swift`, `Sources/Luna/Workspace.swift`, `Tests/LunaTests/ScrolledEditorLayoutTests.swift`, `CHANGELOG.md`.
+
+**Verification / corrections:** An initial large-document probe captured estimated layout settling and was not a sufficient regression; programmatic selection alone also missed the visual overlap. Replaced it with a four-block scrolled note and native triple-click mouse events. The final test failed on the original implementation (four 21.6-point position failures), passed with the fix, and also verifies unchanged following-line positions, source text, and backing-store attributes across repeated highlighting. All 83 Swift tests passed. Native UI review repeated the exact previously failing selection in the user’s note and confirmed stable text and selection with no URL overlap. No note content was edited. Development release build and nested signature verification passed. Gracefully reopened this worktree’s `dist/Luna.app`, confirmed its running executable path and matching release-binary UUID, and verified all five note text fingerprints were unchanged. The affected note is open for review. `git diff --check` passed.
+
+**Release status / limitations:** Local development fix; not published. Extremely long marker prefixes beyond the bound retain default paragraph layout. The prior live-media editor limitation is unchanged; this fix concerns the native editor.
+
 ## 2026-09-22 — Release 0.9.3
 
 **Request:** Ship the native list indentation and Markdown Preview fixes.

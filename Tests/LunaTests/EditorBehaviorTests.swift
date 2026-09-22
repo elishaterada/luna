@@ -68,6 +68,64 @@ final class EditorBehaviorTests: XCTestCase {
         editor.insertTab(nil)
         XCTAssertEqual(editor.string, "```\n• code\t")
     }
+    @MainActor func testSelectedListsIndentTogetherWithoutReplacingText() {
+        _ = NSApplication.shared
+        preference("editor.tabWidth", 2)
+        preference("editor.useTabs", false)
+        let editor = EditorView(usingTextLayoutManager: true)
+        let original = "• First 🌙\n  • Child\n12. Last\nOutside"
+        editor.string = original
+        let selectedLength = (original as NSString).range(of: "Outside").location
+        editor.setSelectedRange(NSRange(location: 0, length: selectedLength))
+        editor.insertTab(nil)
+        XCTAssertEqual(editor.string, "  • First 🌙\n    • Child\n  12. Last\nOutside")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: selectedLength + 6))
+        editor.insertBacktab(nil)
+        XCTAssertEqual(editor.string, original)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: selectedLength))
+        preference("editor.useTabs", true)
+        editor.insertTab(nil)
+        XCTAssertEqual(editor.string, "\t• First 🌙\n\t  • Child\n\t12. Last\nOutside")
+        editor.insertBacktab(nil)
+        XCTAssertEqual(editor.string, original)
+    }
+
+    @MainActor func testPartialListSelectionPreservesProseAndFencedCode() {
+        _ = NSApplication.shared
+        preference("editor.tabWidth", 2)
+        preference("editor.useTabs", false)
+        let editor = EditorView(usingTextLayoutManager: true)
+        editor.string = "• First\nProse\n```\n• Code\n```\n☐ Last"
+        editor.setSelectedRange(NSRange(location: 3, length: (editor.string as NSString).length - 5))
+        editor.insertTab(nil)
+        XCTAssertEqual(editor.string, "  • First\nProse\n```\n• Code\n```\n  ☐ Last")
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: (editor.string as NSString).length))
+    }
+
+    @MainActor func testSelectedListIndentCanBeUndoneAsOneEdit() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(store: try RecoveryStore(directory: root),
+                                  skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        let editor = workspace.editor
+        editor.string = "• First\n• Second"
+        let original = editor.string
+        editor.setSelectedRange(NSRange(location: 0, length: (original as NSString).length))
+        let undo = try XCTUnwrap(editor.undoManager)
+        undo.removeAllActions()
+        undo.beginUndoGrouping()
+        editor.insertTab(nil)
+        undo.endUndoGrouping()
+        XCTAssertNotEqual(editor.string, original)
+        undo.undo()
+        XCTAssertEqual(editor.string, original)
+        undo.redo()
+        XCTAssertTrue(editor.string.contains("• First\n"))
+        XCTAssertTrue(editor.string.hasSuffix("• Second"))
+    }
+
     @MainActor func testPresentationZoomIsVisibleAndPreservesNormalSize() throws {
         _ = NSApplication.shared
         preference("editor.fontSize", 18.0)
