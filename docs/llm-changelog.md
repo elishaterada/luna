@@ -12,7 +12,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Request:** Ship Markdown shortcuts, side-by-side preview, and synchronized scrolling.
 
-**Preparation / release status:** Version and release highlights prepared for 0.10.0. Publication and installed-update verification pending. Relevant implementation and limitations are recorded below.
+**Release verification:** Published `v0.10.0` at `5e7c558`, build `20260922214951`. All 91 Swift tests, four release-tool tests, version ordering, development release build, signatures, and diff checks passed. Release Luna run `35788912302` succeeded on its first attempt, including public signed feed/archive byte comparisons. Verified latest release, highlights, and public appcast. Sparkle initially saw the cached previous feed; retry after refresh offered 0.10.0 with the correct highlights. Updated `/Applications/Luna.app` from 0.9.5 through Install Update and Install and Relaunch; verified version/build and running path. All five notes recovered in the UI. Whole-file recovery hashes changed during save/relaunch, so byte-identical preservation is not asserted. Reopened this worktree’s development build and confirmed its running path and binary UUID match `.build/release/Luna`. Publication and installed-update verification complete. Implementation limitations remain recorded below.
 
 ## 2026-09-22 — Follow-up: synchronize split-preview scrolling
 
@@ -24,7 +24,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** All 91 Swift tests passed, including source-to-preview midpoint scrolling, preview-to-source endpoints, and scroll preservation across a preview reload. Development release build and signature verification passed. Reopened this worktree’s `dist/Luna.app`, confirmed its running executable path and UUID match `.build/release/Luna`, and verified scrolling from both panes in the existing nested-list note. All five notes remain available; no note content was edited. `git diff --check` passed.
 
-**Limitations / release status:** Implemented locally and open for review, not published. Synchronization uses relative document position, not semantic line mapping; individual source and rendered blocks can differ in vertical alignment. This supersedes the independent-scrolling limitation in the prior entry.
+**Limitations / release status:** Shipped in 0.10.0 (verification above). Synchronization uses relative document position, not semantic line mapping; individual source and rendered blocks can differ in vertical alignment. This supersedes the independent-scrolling limitation in the prior entry.
 
 ## 2026-09-22 — Markdown shortcuts and side-by-side preview
 
@@ -38,7 +38,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** All 90 Swift tests passed. New checks cover native menu key-equivalent dispatch, Unicode selections, marker toggling including bold+italic, undo/redo, empty selections, live split rendering after edits, pane separation, recovery persistence, mode transitions, and non-Markdown guards. Native UI verified ⌘⌥M, editable source beside correctly nested preview, compact margins, and enabled Format actions. Development release build and nested signatures passed. Gracefully reopened this worktree’s `dist/Luna.app`, verified its running path and matching release-binary UUID, and confirmed all five note text fingerprints remained unchanged. Updated app is open in split view. `git diff --check` passed.
 
-**Release status / limits:** Local implementation, not published. Split panes have equal fixed widths and independent scrolling (no synchronized scrolling or draggable divider). Markdown source remains the note’s actual stored text, including portable editor list markers; no data migration. Preview retains its existing safe HTML/image rendering policy.
+**Release status / limits:** Shipped in 0.10.0 (verification above). Split panes have equal fixed widths and no draggable divider. The follow-up above supersedes independent scrolling with bidirectional synchronization. Markdown source remains the note’s actual stored text, including portable editor list markers; no data migration. Preview retains its existing safe HTML/image rendering policy.
 
 ## 2026-09-22 — Release 0.9.5
 
