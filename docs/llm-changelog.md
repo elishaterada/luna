@@ -8,7 +8,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Request:** Ship the native list indentation and Markdown Preview fixes.
 
-**Release preparation:** Version and user-facing highlights updated to 0.9.3. Preflight passed all 82 Swift tests, 4 release-tool tests, stable version ordering, development release build, nested signatures, and diff checks. Published-release and installed-update verification pending.
+**Release preparation:** Version and user-facing highlights updated to 0.9.3. Preflight passed all 82 Swift tests, 4 release-tool tests, stable version ordering, development release build, nested signatures, and diff checks. Published `v0.9.3` at `e48cbdf`, build `20260922181642`. Release Luna run `35765784487` succeeded on attempt 2, including public signed-feed/archive byte comparisons. Attempt 1 hit the previously documented live-preview title race (actual Example Domain response replaced the injected title); the unchanged tag passed all checks on retry. Verified the public latest release, highlights, and appcast. Updated `/Applications/Luna.app` from 0.9.2 through Check for Updates → Install Update → Install and Relaunch; confirmed version/build and running path. All five existing note text fingerprints were unchanged. Reopened this worktree’s development 0.9.3 build and confirmed its running path and matching release-binary UUID. Publication and installed-update verification complete.
 
 
 ## 2026-09-22 — Render editor bullets in Markdown Preview
