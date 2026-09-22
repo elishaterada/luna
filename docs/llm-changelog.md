@@ -11,7 +11,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Request:** Ship the list-marker spacing and Backspace fix.
 
-**Preparation:** Updated version and highlights to 0.9.5. Preflight passed all 87 Swift tests, 4 release-tool tests, stable version ordering, development release build, nested signatures, and diff checks. Publication and installed-update verification pending.
+**Preparation:** Updated version and highlights to 0.9.5. Preflight passed all 87 Swift tests, 4 release-tool tests, stable version ordering, development release build, nested signatures, and diff checks. Published `v0.9.5` at `5b5f3f5`, build `20260922211434`. Release Luna run `35784300596` succeeded on attempt 3, including public signed feed/archive byte comparisons. Attempts 1 and 2 stalled without assertion failures in existing navigation tests (`testNumberShortcutsFollowShelfOrderAndPreserveEdits`, then `testPinsDuplicatesAndSharedWindows`); cancelled those attempts and retried the unchanged tag with all checks enabled. The intermittent native XCTest stall remains unresolved. Verified public latest release, highlights, and appcast. Updated `/Applications/Luna.app` from 0.9.4 through Check for Updates → Install Update → Install and Relaunch; confirmed version/build, running path, and all five unchanged note text fingerprints. Reopened this worktree’s development 0.9.5 app and verified its running path and matching release-binary UUID. Publication and installed-update verification complete.
 
 
 ## 2026-09-22 — Treat list marker spacing as an editing unit
