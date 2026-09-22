@@ -10,7 +10,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Request:** Ship stable scrolled selection and multi-item list indentation.
 
-**Preparation:** Updated version and release highlights to 0.9.4. Preflight passed 86 Swift tests, 4 release-tool tests, version ordering, development release build, nested signatures, and diff checks. Publication and installed-update verification pending.
+**Preparation:** Updated version and release highlights to 0.9.4. Preflight passed 86 Swift tests, 4 release-tool tests, version ordering, development release build, nested signatures, and diff checks. Published `v0.9.4` at `d7b2181`, build `20260922185553`. Release Luna run `35769784324` succeeded on attempt 2, including public feed/archive byte comparisons. Attempt 1 stalled in the pre-existing `NoteNavigationTests.testReorderingAndDeletingPreserveSelectionAndRecovery` with no assertion failure, before the new scrolled-selection test ran; cancelled that attempt and reran the unchanged tag on a fresh runner with all checks enabled. The underlying intermittent XCTest stall remains unconfirmed. Verified the public latest release, highlights, and appcast. Updated `/Applications/Luna.app` from 0.9.3 using Check for Updates → Install Update → Install and Relaunch; confirmed version/build, running path, and all five unchanged note text fingerprints. Opened the current worktree’s development 0.9.4 app and verified its running path and matching release-binary UUID. Publication and installed-update verification complete.
 
 
 ## 2026-09-22 — Indent a selected block of list items
