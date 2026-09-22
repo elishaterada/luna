@@ -37,6 +37,37 @@ final class EditorBehaviorTests: XCTestCase {
         editor.insertTab(nil)
         XCTAssertEqual(editor.string, "  \t")
     }
+    @MainActor func testTabIndentsListMarkersAndShiftTabOutdents() {
+        _ = NSApplication.shared
+        preference("editor.tabWidth", 2)
+        preference("editor.useTabs", false)
+        let editor = EditorView(usingTextLayoutManager: true)
+        for marker in ["• ", "12. ", "☐ "] {
+            editor.string = marker + "Item"
+            editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+            editor.insertTab(nil)
+            XCTAssertEqual(editor.string, "  " + marker + "Item")
+            editor.insertTab(nil)
+            XCTAssertEqual(editor.string, "    " + marker + "Item")
+            editor.insertBacktab(nil)
+            XCTAssertEqual(editor.string, "  " + marker + "Item")
+            editor.insertNewline(nil)
+            XCTAssertTrue(editor.string.hasSuffix("\n  " + (marker == "12. " ? "13. " : marker)))
+        }
+        preference("editor.useTabs", true)
+        editor.string = "• Item"
+        editor.setSelectedRange(NSRange(location: 2, length: 0))
+        editor.insertTab(nil)
+        XCTAssertEqual(editor.string, "\t• Item")
+        XCTAssertEqual(editor.selectedRange().location, 3)
+        editor.insertBacktab(nil)
+        XCTAssertEqual(editor.string, "• Item")
+        XCTAssertEqual(editor.selectedRange().location, 2)
+        editor.string = "```\n• code"
+        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+        editor.insertTab(nil)
+        XCTAssertEqual(editor.string, "```\n• code\t")
+    }
     @MainActor func testPresentationZoomIsVisibleAndPreservesNormalSize() throws {
         _ = NSApplication.shared
         preference("editor.fontSize", 18.0)

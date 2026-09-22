@@ -2,6 +2,39 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+
+
+## 2026-09-22 — Release 0.9.3
+
+**Request:** Ship the native list indentation and Markdown Preview fixes.
+
+**Release preparation:** Version and user-facing highlights updated to 0.9.3. Preflight passed all 82 Swift tests, 4 release-tool tests, stable version ordering, development release build, nested signatures, and diff checks. Published-release and installed-update verification pending.
+
+
+## 2026-09-22 — Render editor bullets in Markdown Preview
+
+**Request:** Preview collapses the editor’s bullet rows into one line instead of displaying a list.
+
+**Diagnosis / implementation:** The editor stores portable Unicode `•` markers, but Marked recognizes Markdown list punctuation, so it parsed those rows as one paragraph. `MarkdownRenderer.body` now converts block-level editor bullets to equal-length Markdown markers only in its rendering input. Leading indentation is retained, fenced and standalone indented code stay literal, and UTF-16 task source offsets remain valid. Saved note text is unchanged.
+
+**Files:** `Sources/Luna/MarkdownPreview.swift`, `Tests/LunaTests/MarkdownPreviewTests.swift`, `CHANGELOG.md`.
+
+**Verification:** The regression reproduced the collapsed paragraph before the change (four failed assertions). All 82 Swift tests passed afterward. New checks cover three nesting levels, older rows with whitespace after the marker, literal code/prose, and nested checkbox source positions. A real WKWebView layout check confirms increasing x and y coordinates for each nested row. Development release build and nested code signatures passed. Gracefully reopened this worktree’s `dist/Luna.app`, confirmed its running executable path and matching release-binary UUID, and verified all four existing note text fingerprints were preserved. `git diff --check` passed.
+
+**Limitations / release status:** Preview follows indentation before the marker; spaces after a marker in older notes are not inferred as nesting. The earlier native Tab correction supplies proper indentation going forward. Local development implementation, not published.
+
+## 2026-09-22 — Indent list markers with their items
+
+**Request:** Nested list bullets and numbers should indent along with the text.
+
+**Implementation:** In the native plain-text/Markdown editor, Tab on a list item now inserts the configured spaces or tab before the marker, preserving the caret position within the item. Shift-Tab removes one leading indentation level. Bullets, numbered lists, and checkboxes share this behavior; Enter continues the indented prefix. Calculation acceptance, ordinary text Tab input, and fenced code retain their previous behavior.
+
+**Files:** `Sources/Luna/EditorView.swift`, `Tests/LunaTests/EditorBehaviorTests.swift`, `CHANGELOG.md`.
+
+**Verification:** The new regression failed before the fix (15 assertions) and passed afterward. Tests cover two nesting levels, numbered/bullet/checkbox markers, outdent, continuation, literal tabs, caret position, and fenced code. All 79 Swift tests passed. Development release build and nested signature verification passed. Gracefully quit the installed app and reopened this worktree’s `dist/Luna.app`; confirmed the running executable path and matching Mach-O UUID with `.build/release/Luna`. All four existing note text fingerprints were preserved. `git diff --check` passed.
+
+**Correction / limitations:** An attempted matching live-media editor change was removed after its added test exposed existing DOM line-boundary handling after Enter; that view is outside this final change. Native indentation applies to a caret within one list item, not a multi-line selection. Existing whitespace after markers is not migrated automatically. Local development change; not published.
+
 ## 2026-09-16 — Keep ambient glow steady while typing
 
 **Request:** Ambient Glow still produces a background flash toward the right on every keystroke.

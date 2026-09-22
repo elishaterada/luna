@@ -1,5 +1,10 @@
 # Luna release notes
 
+## 0.9.3 — 2026-09-22
+
+- Markdown Preview now renders editor bullet lists as separate, properly nested list items.
+- Tab now indents bullets, numbers, and checkboxes with their list item; Shift-Tab moves the item back one level.
+
 ## 0.9.2 — 2026-09-16
 
 - Ambient Glow now stays steady while typing; flashes occur only when Return Pulse is enabled and Return is pressed.

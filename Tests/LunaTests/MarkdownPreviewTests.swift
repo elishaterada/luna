@@ -29,6 +29,45 @@ final class MarkdownPreviewTests: XCTestCase {
             XCTAssertTrue(html.contains(fragment), fragment)
         }
     }
+    func testEditorBulletsRenderAsNestedLists() throws {
+        let source = "Nested list\n\n• First level\n  • Second level\n    • Third level\n• Last"
+        let html = try MarkdownRenderer.body(source)
+        XCTAssertEqual(html.components(separatedBy: "<ul>").count - 1, 3, html)
+        XCTAssertEqual(html.components(separatedBy: "<li>").count - 1, 4, html)
+        XCTAssertFalse(html.contains("•"), html)
+        let flat = try MarkdownRenderer.body("• First\n•     Second\n•         Third")
+        XCTAssertEqual(flat.components(separatedBy: "<li>").count - 1, 3, flat)
+    }
+
+    func testEditorBulletConversionPreservesCodeAndTaskOffsets() throws {
+        let source = "```\n• Fenced\n```\n\n    • Code\n\nInline `• literal` and prose • literal.\n\n• Parent\n  - [ ] Child"
+        let html = try MarkdownRenderer.body(source)
+        XCTAssertTrue(html.contains("• Fenced"), html)
+        XCTAssertTrue(html.contains("• Code"), html)
+        XCTAssertTrue(html.contains("<code>• literal</code>"), html)
+        XCTAssertTrue(html.contains("prose • literal"), html)
+        XCTAssertTrue(html.contains("data-task-start=\"\((source as NSString).range(of: "[ ] Child").location)\""), html)
+    }
+
+    @MainActor func testPreviewPlacesNestedBulletsOnSeparateIndentedRows() async throws {
+        _ = NSApplication.shared
+        let preview = MarkdownPreview()
+        preview.frame = NSRect(x: 0, y: 0, width: 700, height: 500)
+        preview.show("• First\n  • Second\n    • Third", fontSize: 18, appearance: NSAppearance(named: .darkAqua)!)
+        for _ in 0..<100 {
+            if (try? await preview.evaluateJavaScript("document.querySelectorAll('li').length")) as? Int == 3 { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let positions = try await preview.evaluateJavaScript("[...document.querySelectorAll('li')].map(e=>{const r=e.getBoundingClientRect();return [r.x,r.y]})")
+        let rows = try XCTUnwrap(positions as? [[Double]])
+        XCTAssertEqual(rows.count, 3)
+        guard rows.count == 3 else { return }
+        XCTAssertGreaterThan(rows[1][0], rows[0][0])
+        XCTAssertGreaterThan(rows[2][0], rows[1][0])
+        XCTAssertGreaterThan(rows[1][1], rows[0][1])
+        XCTAssertGreaterThan(rows[2][1], rows[1][1])
+    }
+
     func testShorthandTaskRows() throws {
         let html = try MarkdownRenderer.body("# Tasks\n\n[x] Done\n[] **Next**\n[ ] Later\n[X] Finished\n\n- [] Listed\n- [ ] Standard")
         XCTAssertEqual(html.components(separatedBy: "type=\"checkbox\"").count - 1, 6)

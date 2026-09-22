@@ -208,9 +208,35 @@ final class EditorView: NSTextView {
         if EditorPreferences.autoIndent && !indentation.isEmpty { insertText(indentation, replacementRange: selectedRange()) }
     }
     override func insertTab(_ sender: Any?) {
+        if calculationSuggestion == nil, indentList(outdent: false) { return }
         let value = calculationSuggestion ?? (EditorPreferences.useTabs ? "\t" : String(repeating: " ", count: EditorPreferences.tabWidth))
         insertText(value, replacementRange: selectedRange())
     }
+    override func insertBacktab(_ sender: Any?) {
+        if indentList(outdent: true) { return }
+        super.insertBacktab(sender)
+    }
+    private func indentList(outdent: Bool) -> Bool {
+        guard formatsLists, !hasMarkedText(), selectedRange().length == 0 else { return false }
+        let selection = selectedRange()
+        let source = string as NSString
+        let lineRange = source.lineRange(for: selection)
+        let line = source.substring(with: lineRange)
+        let context = source.substring(with: NSRange(location: max(0, lineRange.location - 32_768), length: min(lineRange.location, 32_768)))
+        let fenced = context.components(separatedBy: "\n").filter {
+            let trimmed = $0.trimmingCharacters(in: .whitespaces)
+            return trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~")
+        }.count % 2 == 1
+        guard !fenced, NoteLists.continuation(line) != nil else { return false }
+        let indent = String(line.prefix { $0 == " " || $0 == "\t" })
+        let removed = outdent ? (indent.hasPrefix("\t") ? 1 : min(indent.prefix { $0 == " " }.count, EditorPreferences.tabWidth)) : 0
+        let added = outdent ? "" : (EditorPreferences.useTabs ? "\t" : String(repeating: " ", count: EditorPreferences.tabWidth))
+        if removed == 0 && added.isEmpty { return true }
+        insertText(added, replacementRange: NSRange(location: lineRange.location, length: removed))
+        setSelectedRange(NSRange(location: max(lineRange.location, selection.location - removed + (added as NSString).length), length: 0))
+        return true
+    }
+
 }
 
 /// Color only the visible viewport plus context. No access to layoutManager:

@@ -41,6 +41,36 @@ enum MarkdownRenderer {
             html: token => escapeHTML(token.text),
             image: token => '<span>' + escapeHTML(token.text || 'Image') + '</span>'
         }});
+        // Normalize only block-level editor bullets, keeping UTF-16 offsets stable
+        // for interactive task markers. Saved note text is never rewritten.
+        function editorBullets(source) {
+            let fence = null;
+            let listIndent = null;
+            return source.split('\n').map(line => {
+                const row = line.match(/^([ \t]*)(.*)$/);
+                const indent = row[1].replace(/\t/g, '    ').length;
+                const text = row[2];
+                if (fence) {
+                    const closing = text.match(/^(`{3,}|~{3,})[ \t]*$/);
+                    if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) fence = null;
+                    return line;
+                }
+                const opening = text.match(/^(?:[-+*•] +|\d+[.)] +)?(`{3,}|~{3,})(.*)$/);
+                if (opening && (indent < 4 || listIndent !== null) &&
+                    !(opening[1][0] === '`' && opening[2].includes('`'))) {
+                    fence = opening[1]; return line;
+                }
+                if (!text) return line;
+                if (listIndent !== null && indent < listIndent) listIndent = null;
+                const marker = text.match(/^(?:[-+*•]|\d+[.)]) +/);
+                if (marker && (indent < 4 || (listIndent !== null && indent <= listIndent + 4))) {
+                    listIndent = indent;
+                    return text.startsWith('• ') ? row[1] + '-' + text.slice(1) : line;
+                }
+                if (indent < 4) listIndent = null;
+                return line;
+            }).join('\n');
+        }
         function renderMarkdown(source) {
             // Carry original UTF-16 source positions through parsing. Only markers
             // immediately following a rendered checkbox become interactive controls.
@@ -52,7 +82,7 @@ enum MarkdownRenderer {
                     const id = ranges.push({start, length: marker.length}) - 1;
                     return whole + ' ' + prefix + id + 'END';
                 });
-            let html = marked.parse(tagged, {gfm: true});
+            let html = marked.parse(editorBullets(tagged), {gfm: true});
             html = html.replace(new RegExp('(<input[^>]*type="checkbox"[^>]*>)(\\s*)' + prefix + '(\\d+)END', 'g'),
                 (_, input, space, id) => input.replace(' disabled=""', '').replace('>',
                     ' data-task-start="' + ranges[id].start + '" data-task-length="' + ranges[id].length + '" aria-label="Mark task complete or incomplete">'));
