@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.9.5 — 2026-09-22
+
+- Backspace at a list marker removes its prefix as one unit, keeping list spacing consistent; empty list items are removed as a line.
+
 ## 0.9.4 — 2026-09-22
 
 - Tab and Shift-Tab now indent or outdent all selected list items without replacing their content.

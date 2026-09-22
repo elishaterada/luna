@@ -126,6 +126,48 @@ final class EditorBehaviorTests: XCTestCase {
         XCTAssertTrue(editor.string.hasSuffix("• Second"))
     }
 
+    @MainActor func testListBackspaceTreatsMarkerAndGapAsOneUnit() {
+        _ = NSApplication.shared
+        let editor = EditorView(usingTextLayoutManager: true)
+        for marker in ["• ", "12. ", "☐ ", "☑ "] {
+            editor.string = "    " + marker + "Text"
+            editor.setSelectedRange(NSRange(location: ("    " + marker as NSString).length, length: 0))
+            editor.deleteBackward(nil)
+            XCTAssertEqual(editor.string, "Text")
+            XCTAssertEqual(editor.selectedRange().location, 0)
+            editor.string = "• First\n    " + marker
+            editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+            editor.deleteBackward(nil)
+            XCTAssertEqual(editor.string, "• First")
+        }
+        editor.string = "    • First"
+        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+        editor.insertNewline(nil)
+        XCTAssertEqual(editor.string, "    • First\n    • ")
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, "    • First")
+        editor.string = "• First\n• \n• Last"
+        editor.setSelectedRange(NSRange(location: 10, length: 0))
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, "• First\n• Last")
+        editor.string = "• \n• Last"
+        editor.setSelectedRange(NSRange(location: 2, length: 0))
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, "• Last")
+        editor.string = "• First\r\n• "
+        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, "• First")
+        editor.string = "• Text"
+        editor.setSelectedRange(NSRange(location: 6, length: 0))
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, "• Tex")
+        editor.string = "```\n• Code"
+        editor.setSelectedRange(NSRange(location: 6, length: 0))
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, "```\n•Code")
+    }
+
     @MainActor func testPresentationZoomIsVisibleAndPreservesNormalSize() throws {
         _ = NSApplication.shared
         preference("editor.fontSize", 18.0)

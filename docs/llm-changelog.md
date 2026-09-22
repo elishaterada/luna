@@ -6,6 +6,26 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 
 
+
+## 2026-09-22 — Release 0.9.5
+
+**Request:** Ship the list-marker spacing and Backspace fix.
+
+**Preparation:** Updated version and highlights to 0.9.5. Preflight passed all 87 Swift tests, 4 release-tool tests, stable version ordering, development release build, nested signatures, and diff checks. Publication and installed-update verification pending.
+
+
+## 2026-09-22 — Treat list marker spacing as an editing unit
+
+**Request:** Return should continue list items at the same indentation; Backspace should not delete only the gap after the bullet, creating inconsistent marker spacing. Empty items should be deleted as a line.
+
+**Implementation:** `EditorView.deleteBackward` recognizes a collapsed caret within or immediately after a native list prefix. For a populated item it removes indentation, marker, and separator together while preserving its words. For an empty item it removes the item and its line break, preserving neighboring rows (including CRLF). Ordinary text deletion, selected-text deletion, other language modes, and fenced code retain their previous behavior. Return’s existing continuation preserves the indentation and one separator; verified in the regression.
+
+**Files:** `Sources/Luna/EditorView.swift`, `Tests/LunaTests/EditorBehaviorTests.swift`, `CHANGELOG.md`.
+
+**Verification:** The regression failed before the change, reproducing `•Text` after deleting the separator. All 87 Swift tests passed afterward. Coverage includes bullets, numbers, both checkbox states, nested continuation followed by Backspace, empty first/middle/last rows, CRLF, normal text deletion, and literal fenced code. Development release build and nested signatures passed. Gracefully reopened this worktree’s `dist/Luna.app`, verified its running path and matching release-binary UUID, and confirmed all five existing note text fingerprints were preserved. `git diff --check` passed.
+
+**Limits / release status:** Local development fix, not published. Populated item text is preserved rather than deleting user words. Previously malformed prefixes are not automatically rewritten; the live-media editor remains outside this change.
+
 ## 2026-09-22 — Release 0.9.4
 
 **Request:** Ship stable scrolled selection and multi-item list indentation.

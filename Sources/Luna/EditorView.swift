@@ -198,6 +198,43 @@ final class EditorView: NSTextView {
         ])
     }
 
+    override func deleteBackward(_ sender: Any?) {
+        let selection = selectedRange()
+        guard formatsLists, !hasMarkedText(), selection.length == 0 else {
+            super.deleteBackward(sender); return
+        }
+        let source = string as NSString
+        let row = source.lineRange(for: selection)
+        let line = source.substring(with: row)
+        let context = source.substring(with: NSRange(location: max(0, row.location - 32_768), length: min(row.location, 32_768)))
+        let fenced = context.components(separatedBy: "\n").filter {
+            let trimmed = $0.trimmingCharacters(in: .whitespaces)
+            return trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~")
+        }.count % 2 == 1
+        guard !fenced, let match = line.range(of: NoteLists.pattern, options: .regularExpression) else {
+            super.deleteBackward(sender); return
+        }
+        let prefixLength = (String(line[match]) as NSString).length
+        let indentLength = (String(line.prefix { $0 == " " || $0 == "\t" }) as NSString).length
+        let localCaret = selection.location - row.location
+        let empty = (line as NSString).substring(from: prefixLength).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard localCaret > indentLength, localCaret <= prefixLength || empty else {
+            super.deleteBackward(sender); return
+        }
+        if empty {
+            // Remove the empty item with its line break, leaving adjacent text intact.
+            if row.location > 0 {
+                var start = row.location - 1
+                if source.character(at: start) == 10, start > 0, source.character(at: start - 1) == 13 { start -= 1 }
+                let contentLength = (line.trimmingCharacters(in: .newlines) as NSString).length
+                super.insertText("", replacementRange: NSRange(location: start, length: row.location + contentLength - start))
+            } else { super.insertText("", replacementRange: row) }
+        } else {
+            // Exiting a populated list item preserves its words; never leave a bare marker.
+            super.insertText("", replacementRange: NSRange(location: row.location, length: prefixLength))
+        }
+    }
+
     override func insertNewline(_ sender: Any?) {
         let source = string as NSString
         let location = selectedRange().location
