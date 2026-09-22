@@ -68,6 +68,12 @@ final class MarkdownPreviewTests: XCTestCase {
         XCTAssertGreaterThan(rows[2][1], rows[1][1])
     }
 
+    func testEditorBulletsReturnToParentIndentation() throws {
+        let html = try MarkdownRenderer.body("• First\n    • Second\n        • Third\n    • Sibling\n        • Child\n    • Last")
+        XCTAssertEqual(html.components(separatedBy: "<li>").count - 1, 6, html)
+        XCTAssertFalse(html.contains("•"), html)
+    }
+
     func testShorthandTaskRows() throws {
         let html = try MarkdownRenderer.body("# Tasks\n\n[x] Done\n[] **Next**\n[ ] Later\n[X] Finished\n\n- [] Listed\n- [ ] Standard")
         XCTAssertEqual(html.components(separatedBy: "type=\"checkbox\"").count - 1, 6)

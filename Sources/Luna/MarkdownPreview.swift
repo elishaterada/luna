@@ -61,7 +61,6 @@ enum MarkdownRenderer {
                     fence = opening[1]; return line;
                 }
                 if (!text) return line;
-                if (listIndent !== null && indent < listIndent) listIndent = null;
                 const marker = text.match(/^(?:[-+*•]|\d+[.)]) +/);
                 if (marker && (indent < 4 || (listIndent !== null && indent <= listIndent + 4))) {
                     listIndent = indent;
@@ -94,14 +93,14 @@ enum MarkdownRenderer {
         return html
     }
 
-    static func page(body: String, fontSize: CGFloat, dark: Bool, pageID: String = UUID().uuidString) -> String {
+    static func page(body: String, fontSize: CGFloat, dark: Bool, pageID: String = UUID().uuidString, compact: Bool = false) -> String {
         """
         <!doctype html><html><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-\(pageID)'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
         <style>
         :root { color-scheme: \(dark ? "dark" : "light"); }
-        body { margin: 0; padding: 24px 40px 48px; color: \(dark ? "#cccccc" : "#242833");
+        body { margin: 0; padding: 24px \(compact ? 16 : 40)px 48px; color: \(dark ? "#cccccc" : "#242833");
           font: \(fontSize)px/1.65 -apple-system, BlinkMacSystemFont, sans-serif; overflow-wrap: anywhere; }
         article { max-width: 72ch; margin: 0 auto; }
         h1,h2,h3,h4,h5,h6 { line-height: 1.25; margin: 1.5em 0 .5em; font-weight: 650; }
@@ -126,6 +125,18 @@ enum MarkdownRenderer {
         ::selection { background: \(dark ? "#19f9d838" : "#00796b30"); }
         </style></head><body><article>\(body)</article>
         <script nonce="\(pageID)">
+        let appliedScroll = null;
+        window.setScrollFraction = fraction => {
+            const maximum = Math.max(0, document.documentElement.scrollHeight - innerHeight);
+            window.scrollTo(0, fraction * maximum);
+            appliedScroll = window.scrollY;
+        };
+        window.addEventListener('scroll', () => {
+            if (appliedScroll !== null && Math.abs(scrollY - appliedScroll) < 1) return;
+            appliedScroll = null;
+            const maximum = document.documentElement.scrollHeight - innerHeight;
+            if (maximum > 0) window.webkit.messageHandlers.previewScroll.postMessage({page: '\(pageID)', fraction: Math.max(0, Math.min(1, scrollY / maximum))});
+        }, {passive: true});
         document.addEventListener('change', event => {
             const box = event.target;
             if (!box.matches('input[data-task-start]')) return;
@@ -140,6 +151,12 @@ enum MarkdownRenderer {
 private final class TaskToggleHandler: NSObject, WKScriptMessageHandler {
     weak var preview: MarkdownPreview?
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "previewScroll" {
+            guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
+                  let page = body["page"] as? String, let fraction = body["fraction"] as? Double else { return }
+            preview?.receiveScroll(page: page, fraction: fraction)
+            return
+        }
         guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
               let page = body["page"] as? String, let start = body["start"] as? Int,
               let length = body["length"] as? Int, let checked = body["checked"] as? Bool else { return }
@@ -148,6 +165,10 @@ private final class TaskToggleHandler: NSObject, WKScriptMessageHandler {
 }
 
 final class MarkdownPreview: FileDropWebView, WKNavigationDelegate {
+    var onScroll: ((Double) -> Void)?
+    var onReady: (() -> Void)?
+    var synchronizedScrolling = false
+    var scrollFraction: Double = 0
     var onTaskToggle: ((String, NSRange, String) -> Bool)?
     private var taskEdits: [Int: Int] = [:]
     private let renderQueue = DispatchQueue(label: "dev.luna.markdown", qos: .userInitiated)
@@ -155,6 +176,8 @@ final class MarkdownPreview: FileDropWebView, WKNavigationDelegate {
     private var lastSource: String?
     private var lastSize: CGFloat = 0
     private var lastDark = false
+    private var lastCompact = false
+    private var pendingScrollOffset: Double?
 
     init() {
         let configuration = WKWebViewConfiguration()
@@ -162,6 +185,7 @@ final class MarkdownPreview: FileDropWebView, WKNavigationDelegate {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         let handler = TaskToggleHandler()
         configuration.userContentController.add(handler, name: "taskToggle")
+        configuration.userContentController.add(handler, name: "previewScroll")
         super.init(frame: .zero, configuration: configuration)
         handler.preview = self
         navigationDelegate = self
@@ -170,13 +194,16 @@ final class MarkdownPreview: FileDropWebView, WKNavigationDelegate {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    func show(_ source: String, fontSize: CGFloat, appearance: NSAppearance) {
+    func show(_ source: String, fontSize: CGFloat, appearance: NSAppearance, preservingScroll: Bool = false) {
         let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        guard lastSource != source || lastSize != fontSize || lastDark != dark else { return }
-        lastSource = source; lastSize = fontSize; lastDark = dark
+        guard lastSource != source || lastSize != fontSize || lastDark != dark || lastCompact != preservingScroll else { return }
+        lastSource = source; lastSize = fontSize; lastDark = dark; lastCompact = preservingScroll
         let request = UUID(); revision = request
         taskEdits = [:]
-        loadHTMLString(MarkdownRenderer.page(body: "<p>Rendering preview…</p>", fontSize: fontSize, dark: dark), baseURL: nil)
+        if !preservingScroll {
+            pendingScrollOffset = nil
+            loadHTMLString(MarkdownRenderer.page(body: "<p>Rendering preview…</p>", fontSize: fontSize, dark: dark), baseURL: nil)
+        }
         renderQueue.async { [weak self] in
             let body: String
             if source.utf8.count > 2_000_000 {
@@ -185,12 +212,42 @@ final class MarkdownPreview: FileDropWebView, WKNavigationDelegate {
                 do { body = source.isEmpty ? "<p>Nothing to preview yet. Choose Edit to start writing.</p>" : try MarkdownRenderer.body(source) }
                 catch { body = "<p>Preview could not be rendered. Choose Edit to return to the source.</p>" }
             }
-            let page = MarkdownRenderer.page(body: body, fontSize: fontSize, dark: dark, pageID: request.uuidString)
+            let page = MarkdownRenderer.page(body: body, fontSize: fontSize, dark: dark, pageID: request.uuidString, compact: preservingScroll)
             DispatchQueue.main.async {
                 guard let self, self.revision == request else { return }
-                self.loadHTMLString(page, baseURL: nil)
+                if preservingScroll {
+                    self.evaluateJavaScript("window.scrollY") { [weak self] value, _ in
+                        guard let self, self.revision == request else { return }
+                        self.pendingScrollOffset = (value as? NSNumber)?.doubleValue ?? 0
+                        self.loadHTMLString(page, baseURL: nil)
+                    }
+                } else { self.loadHTMLString(page, baseURL: nil) }
             }
         }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if synchronizedScrolling {
+            pendingScrollOffset = nil
+            onReady?()
+            setScrollFraction(scrollFraction)
+        } else if let offset = pendingScrollOffset {
+            pendingScrollOffset = nil
+            evaluateJavaScript("window.scrollTo(0, \(offset))", completionHandler: nil)
+        }
+    }
+
+    func setScrollFraction(_ fraction: Double) {
+        guard fraction.isFinite else { return }
+        scrollFraction = min(1, max(0, fraction))
+        guard synchronizedScrolling else { return }
+        evaluateJavaScript("window.setScrollFraction?.(\(scrollFraction))", completionHandler: nil)
+    }
+
+    fileprivate func receiveScroll(page: String, fraction: Double) {
+        guard synchronizedScrolling, page == revision.uuidString, fraction.isFinite else { return }
+        scrollFraction = min(1, max(0, fraction))
+        onScroll?(scrollFraction)
     }
 
     @discardableResult func toggleTask(page: String, start: Int, length: Int, checked: Bool) -> Bool {

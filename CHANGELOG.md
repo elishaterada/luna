@@ -1,5 +1,11 @@
 # Luna release notes
 
+## 0.10.0 — 2026-09-22
+
+- Scrolling either side of Source and Preview keeps both panes at the same relative position.
+- Format Markdown selections with ⌘B for bold, ⌘I for italic, and ⌘⇧C for inline code.
+- View editable Markdown source beside a live preview using Source and Preview (⌘⌥M).
+
 ## 0.9.5 — 2026-09-22
 
 - Backspace at a list marker removes its prefix as one unit, keeping list spacing consistent; empty list items are removed as a line.

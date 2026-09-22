@@ -198,6 +198,42 @@ final class EditorView: NSTextView {
         ])
     }
 
+    func toggleMarkdownMarker(_ marker: String) {
+        guard isEditable, !hasMarkedText() else { return }
+        let selection = selectedRange()
+        let source = string as NSString
+        let width = (marker as NSString).length
+        let selected = source.substring(with: selection)
+        func stars(from start: Int, step: Int) -> Int {
+            var count = 0
+            var offset = start
+            while count < 3, offset >= 0, offset < source.length, source.character(at: offset) == 42 {
+                count += 1; offset += step
+            }
+            return count
+        }
+        let selectedStars = selected.prefix(3).prefix { $0 == "*" }.count
+        let selectedEndStars = selected.suffix(3).reversed().prefix { $0 == "*" }.count
+        let beforeStars = stars(from: selection.location - 1, step: -1)
+        let afterStars = stars(from: NSMaxRange(selection), step: 1)
+        // A pair of stars denotes bold, not an italic marker to remove.
+        let selectedIsMarker = marker != "*" || (selectedStars != 2 && selectedEndStars != 2)
+        let surroundingIsMarker = marker != "*" || (beforeStars != 2 && afterStars != 2)
+        if selectedIsMarker, selection.length >= width * 2, selected.hasPrefix(marker), selected.hasSuffix(marker) {
+            let inner = (selected as NSString).substring(with: NSRange(location: width, length: selection.length - width * 2))
+            super.insertText(inner, replacementRange: selection)
+            setSelectedRange(NSRange(location: selection.location, length: (inner as NSString).length))
+        } else if surroundingIsMarker, selection.location >= width, NSMaxRange(selection) + width <= source.length,
+                  source.substring(with: NSRange(location: selection.location - width, length: width)) == marker,
+                  source.substring(with: NSRange(location: NSMaxRange(selection), length: width)) == marker {
+            super.insertText(selected, replacementRange: NSRange(location: selection.location - width, length: selection.length + width * 2))
+            setSelectedRange(NSRange(location: selection.location - width, length: selection.length))
+        } else {
+            super.insertText(marker + selected + marker, replacementRange: selection)
+            setSelectedRange(NSRange(location: selection.location + width, length: selection.length))
+        }
+    }
+
     override func deleteBackward(_ sender: Any?) {
         let selection = selectedRange()
         guard formatsLists, !hasMarkedText(), selection.length == 0 else {

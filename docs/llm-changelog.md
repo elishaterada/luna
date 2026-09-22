@@ -7,6 +7,39 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 
 
+
+## 2026-09-22 — Release 0.10.0
+
+**Request:** Ship Markdown shortcuts, side-by-side preview, and synchronized scrolling.
+
+**Preparation / release status:** Version and release highlights prepared for 0.10.0. Publication and installed-update verification pending. Relevant implementation and limitations are recorded below.
+
+## 2026-09-22 — Follow-up: synchronize split-preview scrolling
+
+**Request:** Keep raw Markdown and Preview scroll positions synchronized.
+
+**Implementation:** Both panes now share a normalized vertical scroll fraction, accounting for different document heights. Native clip-view changes move Preview; page-scoped WebKit scroll messages move the source. Programmatic scroll events are suppressed to prevent feedback. Preview reloads request the current source position after navigation. Synchronization is enabled only in split mode; zero-height scroll ranges and stale page messages are guarded.
+
+**Files:** `Sources/Luna/Workspace.swift`, `Sources/Luna/MarkdownPreview.swift`, `Tests/LunaTests/MarkdownEditingTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** All 91 Swift tests passed, including source-to-preview midpoint scrolling, preview-to-source endpoints, and scroll preservation across a preview reload. Development release build and signature verification passed. Reopened this worktree’s `dist/Luna.app`, confirmed its running executable path and UUID match `.build/release/Luna`, and verified scrolling from both panes in the existing nested-list note. All five notes remain available; no note content was edited. `git diff --check` passed.
+
+**Limitations / release status:** Implemented locally and open for review, not published. Synchronization uses relative document position, not semantic line mapping; individual source and rendered blocks can differ in vertical alignment. This supersedes the independent-scrolling limitation in the prior entry.
+
+## 2026-09-22 — Markdown shortcuts and side-by-side preview
+
+**Request:** Add Markdown editing shortcuts such as Command-B on selected text, and show editable raw source next to Markdown Preview.
+
+**Implementation:** Added Format menu actions for Bold (⌘B), Italic (⌘I), and Inline Code (⌘⇧C), enabled only when the native Markdown editor has focus. Actions insert literal markers, retain the inner selection, toggle existing markers, and use native undo. Empty selections insert a pair with the caret between them. Italic toggling distinguishes bold’s double stars from single/triple-star emphasis; nearby scans are bounded. Added Source and Preview (⌘⌥M) to View and the document header. It displays source left and rendered Markdown right with equal pane widths, a divider, and compact margins. Rendering is debounced 150 ms, retains existing preview content while compiling, and restores preview scroll position after refresh. Both panes remain independently scrollable. Full preview and split view are mutually exclusive; changing notes resets split mode, and non-Markdown notes do not expose it. Existing preview checkbox callbacks work in split mode too.
+
+**Visual-review correction:** The long nested-list sample exposed an older renderer bug when returning from deeper indentation to a parent. Removed the premature parent-context reset; added a regression confirming all six nested/sibling rows remain list items rather than collapsing into text. This change affects Preview rendering only, not saved notes.
+
+**Files:** `EditorView.swift`, `Workspace.swift`, `MarkdownPreview.swift`, `main.swift`, `Tests/LunaTests/MarkdownEditingTests.swift`, `MarkdownPreviewTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** All 90 Swift tests passed. New checks cover native menu key-equivalent dispatch, Unicode selections, marker toggling including bold+italic, undo/redo, empty selections, live split rendering after edits, pane separation, recovery persistence, mode transitions, and non-Markdown guards. Native UI verified ⌘⌥M, editable source beside correctly nested preview, compact margins, and enabled Format actions. Development release build and nested signatures passed. Gracefully reopened this worktree’s `dist/Luna.app`, verified its running path and matching release-binary UUID, and confirmed all five note text fingerprints remained unchanged. Updated app is open in split view. `git diff --check` passed.
+
+**Release status / limits:** Local implementation, not published. Split panes have equal fixed widths and independent scrolling (no synchronized scrolling or draggable divider). Markdown source remains the note’s actual stored text, including portable editor list markers; no data migration. Preview retains its existing safe HTML/image rendering policy.
+
 ## 2026-09-22 — Release 0.9.5
 
 **Request:** Ship the list-marker spacing and Backspace fix.

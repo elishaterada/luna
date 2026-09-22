@@ -34,6 +34,15 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     private(set) var richEditing = false
     private var previewButton: ChromeButton!
     private(set) var previewing = false
+    private var applyingPreviewScroll = false
+    private(set) var splitPreviewing = false
+    private var splitRenderTask: DispatchWorkItem?
+    private var splitButton: ChromeButton!
+    private var editorTrailing: NSLayoutConstraint!
+    private var editorSplitTrailing: NSLayoutConstraint!
+    private var previewLeading: NSLayoutConstraint!
+    private var previewSplitLeading: NSLayoutConstraint!
+    private let previewDivider = Surface(Theme.muted.withAlphaComponent(0.2))
     let table = NoteListView()
     let sidebar = Surface(Theme.panel)
     let main = Surface(Theme.background)
@@ -174,7 +183,8 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         ])
         presentationButton = Theme.button("play.rectangle", label: "Enter presentation mode (⌘⇧P)", target: self, action: #selector(togglePresentation), title: "Present", width: 92)
         previewButton = Theme.button("", label: "Preview Markdown (⌘⇧M)", target: self, action: #selector(toggleMarkdownPreview), title: "Preview", width: 76)
-        let documentActions = NSStackView(views: [previewButton, presentationButton]); documentActions.spacing = 8
+        splitButton = Theme.button("rectangle.split.2x1", label: "Source and Preview (⌘⌥M)", target: self, action: #selector(toggleSplitPreview), width: 32)
+        let documentActions = NSStackView(views: [splitButton, previewButton, presentationButton]); documentActions.spacing = 8
         editor.configureListLayout()
         scroll.documentView = editor; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         scroll.drawsBackground = false; scroll.borderType = .noBorder
@@ -224,24 +234,34 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         footerTrailing = footer.trailingAnchor.constraint(equalTo: main.trailingAnchor, constant: -40)
         dividerInset = line.leadingAnchor.constraint(equalTo: main.leadingAnchor, constant: 40)
         dividerTrailing = line.trailingAnchor.constraint(equalTo: main.trailingAnchor, constant: -40)
+        editorTrailing = scroll.trailingAnchor.constraint(equalTo: main.trailingAnchor)
+        editorSplitTrailing = scroll.trailingAnchor.constraint(equalTo: main.centerXAnchor, constant: -1)
         NSLayoutConstraint.activate([
             titleStack.topAnchor.constraint(equalTo: main.topAnchor, constant: 56), headerInset, titleStack.trailingAnchor.constraint(lessThanOrEqualTo: documentActions.leadingAnchor, constant: -24),
             documentActions.centerYAnchor.constraint(equalTo: titleStack.centerYAnchor), documentActions.trailingAnchor.constraint(equalTo: main.trailingAnchor, constant: -24),
-            scroll.topAnchor.constraint(equalTo: titleStack.bottomAnchor, constant: 24), scroll.leadingAnchor.constraint(equalTo: main.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: main.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: line.topAnchor),
+            scroll.topAnchor.constraint(equalTo: titleStack.bottomAnchor, constant: 24), scroll.leadingAnchor.constraint(equalTo: main.leadingAnchor), editorTrailing, scroll.bottomAnchor.constraint(equalTo: line.topAnchor),
             line.heightAnchor.constraint(equalToConstant: 1), dividerInset, dividerTrailing, line.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -16),
             footerInset, footerTrailing, footer.bottomAnchor.constraint(equalTo: main.bottomAnchor, constant: -20), footer.heightAnchor.constraint(equalToConstant: 32)
         ])
         markdownPreview.onTaskToggle = { [weak self] source, range, replacement in
-            guard let self, self.previewing, self.editor.string == source else { return false }
+            guard let self, (self.previewing || self.splitPreviewing), self.editor.string == source else { return false }
             self.editor.insertText(replacement, replacementRange: range)
             return self.editor.string == (source as NSString).replacingCharacters(in: range, with: replacement)
         }
         markdownPreview.translatesAutoresizingMaskIntoConstraints = false
         markdownPreview.isHidden = true
         main.addSubview(markdownPreview)
+        previewLeading = markdownPreview.leadingAnchor.constraint(equalTo: main.leadingAnchor)
+        previewSplitLeading = markdownPreview.leadingAnchor.constraint(equalTo: main.centerXAnchor, constant: 1)
+        previewDivider.translatesAutoresizingMaskIntoConstraints = false
+        main.addSubview(previewDivider)
         NSLayoutConstraint.activate([
-            markdownPreview.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
-            markdownPreview.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            previewDivider.centerXAnchor.constraint(equalTo: main.centerXAnchor),
+            previewDivider.widthAnchor.constraint(equalToConstant: 1),
+            previewDivider.topAnchor.constraint(equalTo: scroll.topAnchor),
+            previewDivider.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
+            previewLeading,
+            markdownPreview.trailingAnchor.constraint(equalTo: main.trailingAnchor),
             markdownPreview.topAnchor.constraint(equalTo: scroll.topAnchor),
             markdownPreview.bottomAnchor.constraint(equalTo: scroll.bottomAnchor)
         ])
@@ -255,6 +275,16 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             mediaView.bottomAnchor.constraint(equalTo: scroll.bottomAnchor)
         ])
         scroll.contentView.postsBoundsChangedNotifications = true
+        markdownPreview.onReady = { [weak self] in self?.syncSourceScroll() }
+        markdownPreview.onScroll = { [weak self] fraction in
+            guard let self, self.splitPreviewing else { return }
+            self.applyingPreviewScroll = true
+            let clip = self.scroll.contentView
+            let maximum = max(0, self.editor.frame.height - clip.bounds.height)
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: CGFloat(fraction) * maximum))
+            self.scroll.reflectScrolledClipView(clip)
+            self.applyingPreviewScroll = false
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
     }
 
@@ -378,7 +408,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     func select(_ id: UUID, focusContent: Bool = false) {
         guard flushRecovery() else { return }
-        previewing = false
+        previewing = false; splitPreviewing = false
         selectedID = id
         guard let index else { return }
         richEditing = NoteEmbeds.hasContent(notes[index].text)
@@ -473,7 +503,13 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         do { try diskQueue.sync { try store.save(notes[index]); try store.saveOrder(notes.map(\.id)) }; lastRecoveryError = nil; return true }
         catch { lastRecoveryError = error; showError(error); return false }
     }
+    private func syncSourceScroll() {
+        guard splitPreviewing, !applyingPreviewScroll else { return }
+        let maximum = max(0, editor.frame.height - scroll.contentView.bounds.height)
+        markdownPreview.setScrollFraction(maximum > 0 ? Double(scroll.contentView.bounds.origin.y / maximum) : 0)
+    }
     @objc func viewportChanged() {
+        syncSourceScroll()
         highlightTask?.cancel()
         let task = DispatchWorkItem { [weak self] in guard let self else { return }; self.highlighter.highlight(self.editor) }
         highlightTask = task; DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: task)
@@ -667,8 +703,21 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     func focusContent() {
         window?.makeFirstResponder(richEditing ? mediaView : (previewing ? markdownPreview : editor))
     }
+    private var canFormatMarkdown: Bool {
+        index.map { notes[$0].language == "Markdown" } == true && !previewing && !richEditing && window?.firstResponder === editor
+    }
+    @objc func markdownBold() { if canFormatMarkdown { editor.toggleMarkdownMarker("**") } }
+    @objc func markdownItalic() { if canFormatMarkdown { editor.toggleMarkdownMarker("*") } }
+    @objc func markdownCode() { if canFormatMarkdown { editor.toggleMarkdownMarker("`") } }
+
+    @objc func toggleSplitPreview() {
+        guard index.map({ notes[$0].language == "Markdown" }) == true else { return }
+        splitPreviewing.toggle(); previewing = false; richEditing = false
+        updatePreview(); focusContent()
+    }
     @objc func toggleMarkdownPreview() {
         guard let index else { return }
+        splitPreviewing = false
         if NoteEmbeds.hasContent(notes[index].text) || richEditing { richEditing.toggle(); previewing = false }
         else if notes[index].language == "Markdown" { previewing.toggle() }
         else { return }
@@ -679,7 +728,18 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     private func updatePreview() {
         editor.formatsLists = index.map { ["Plain Text", "Markdown"].contains(notes[$0].language) } ?? true
         let isMarkdown = index.map { notes[$0].language == "Markdown" } ?? false
-        if !isMarkdown { previewing = false }
+        if !isMarkdown { previewing = false; splitPreviewing = false }
+        splitButton?.isHidden = !isMarkdown
+        splitButton?.state = splitPreviewing ? .on : .off
+        if let editorSplitTrailing, editorSplitTrailing.isActive != splitPreviewing {
+            NSLayoutConstraint.deactivate([editorTrailing, editorSplitTrailing, previewLeading, previewSplitLeading])
+            NSLayoutConstraint.activate(splitPreviewing ? [editorSplitTrailing, previewSplitLeading] : [editorTrailing, previewLeading])
+        }
+        previewDivider.isHidden = !splitPreviewing
+        let editorInset: CGFloat = splitPreviewing ? 16 : (presenting ? max(56, EditorPreferences.editorPadding) : EditorPreferences.editorPadding)
+        if editor.textContainerInset.width != editorInset {
+            editor.textContainerInset.width = editorInset
+        }
         let hasMedia = index.map { NoteEmbeds.hasContent(notes[$0].text) } ?? false
         previewButton?.isHidden = !isMarkdown && !hasMedia && !richEditing
         previewButton?.title = previewing ? "Edit" : "Preview"
@@ -692,13 +752,25 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             previewButton?.setAccessibilityLabel(previewButton?.toolTip)
         }
         scroll.isHidden = previewing || richEditing
-        markdownPreview.isHidden = !previewing || richEditing
+        markdownPreview.isHidden = !(previewing || splitPreviewing) || richEditing
         if !richEditing && !mediaView.isHidden { mediaView.suspend() }
         mediaView.isHidden = !richEditing
         if richEditing, let index {
             mediaView.show(notes[index], store: store, fontSize: displayedFontSize, appearance: window?.effectiveAppearance ?? NSApp.effectiveAppearance)
         }
-        if previewing { markdownPreview.show(editor.string, fontSize: displayedFontSize, appearance: window?.effectiveAppearance ?? NSApp.effectiveAppearance) }
+        markdownPreview.synchronizedScrolling = splitPreviewing
+        splitRenderTask?.cancel()
+        if splitPreviewing {
+            let task = DispatchWorkItem { [weak self] in
+                guard let self, self.splitPreviewing else { return }
+                self.markdownPreview.show(self.editor.string, fontSize: self.displayedFontSize,
+                    appearance: self.window?.effectiveAppearance ?? NSApp.effectiveAppearance, preservingScroll: true)
+            }
+            splitRenderTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: task)
+        } else if previewing {
+            markdownPreview.show(editor.string, fontSize: displayedFontSize, appearance: window?.effectiveAppearance ?? NSApp.effectiveAppearance)
+        }
     }
     private func receiveNotes() {
         guard isWindowLoaded else { return }
@@ -796,6 +868,12 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         return flushRecovery()
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if [#selector(markdownBold), #selector(markdownItalic), #selector(markdownCode)].contains(item.action) { return canFormatMarkdown }
+        if item.action == #selector(toggleSplitPreview) {
+            item.state = splitPreviewing ? .on : .off
+            return index.map { notes[$0].language == "Markdown" } ?? false
+        }
+
         if [#selector(pinClickedNote), #selector(duplicateClickedNote), #selector(shareClickedNote), #selector(openClickedNoteInWindow)].contains(item.action) {
             guard let id = clickedNoteID, let note = notes.first(where: { $0.id == id }) else { return false }
             if item.action == #selector(pinClickedNote) { item.title = note.isPinned ? "Unpin" : "Pin" }
