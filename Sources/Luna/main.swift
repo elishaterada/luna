@@ -40,6 +40,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func buyMeACoffee() {
         NSWorkspace.shared.open(URL(string: "https://buymeacoffee.com/elishaterada")!)
     }
+    @objc func selectAllContent(_ sender: Any?) {
+        guard let workspace else { return }
+        let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? workspace
+        active.selectAllContent(sender)
+    }
     func buildMenu() {
         let menu = NSMenu()
         func submenu(_ title: String) -> NSMenu { let item = NSMenuItem(); item.title = title; let sub = NSMenu(title: title); item.submenu = sub; menu.addItem(item); return sub }
@@ -71,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let edit = submenu("Edit")
         item(edit, "Undo", Selector(("undo:")), "z"); item(edit, "Redo", Selector(("redo:")), "z", [.command, .shift])
         edit.addItem(.separator()); item(edit, "Cut", #selector(NSText.cut(_:)), "x"); item(edit, "Copy", #selector(NSText.copy(_:)), "c")
-        item(edit, "Paste", #selector(NSText.paste(_:)), "v"); item(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
+        item(edit, "Paste", #selector(NSText.paste(_:)), "v"); item(edit, "Select All", #selector(selectAllContent), "a", target: self)
         edit.addItem(.separator())
         let find = NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f"); find.tag = NSTextFinder.Action.showFindInterface.rawValue; edit.addItem(find)
         let format = submenu("Format")

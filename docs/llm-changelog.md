@@ -2,6 +2,196 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-10-05 — Release 0.11.0
+
+**Request:** Ship the completed link, Bookmark, Mention, slash-command, and editor follow-up changes.
+
+**Preparation:** Updated `Resources/Info.plist` to 0.11.0 and promoted the accumulated user-facing highlights in `CHANGELOG.md` to the dated 0.11.0 section. The release commit includes the app implementation, focused tests, and technical history. Unused icon concept files and `TODO.md` remain local drafts outside the app and release.
+
+**Preflight verification:** All 108 Swift tests (93 Luna, 15 LunaCore), four release-tool tests, stable version ordering, production build, nested app signature, and `git diff --check` passed. Opened this worktree's 0.11.0 `dist/Luna.app`, confirmed the real Suno Bookmark image card, and found all four saved note-text fingerprints unchanged.
+
+**Release verification / status:** Pending tag, GitHub workflow, public download checks, and installed-app update.
+
+## 2026-10-05 — Follow-up: show Open Graph images in Bookmarks
+
+**Request:** Make Bookmark cards show a page's Open Graph image like the supplied Notion preview, with the image on the left and the favicon, title, description, and URL beside it.
+
+**Implementation:** Link metadata now reads an HTTPS Open Graph or Twitter image URL, resolves relative image paths, and decodes HTML entities. Bookmark cards load the image and expand into a two-column layout after it succeeds. Pages without a loadable image retain the compact Bookmark card. The full URL appears in the image card footer. Mention display and saved note source remain unchanged.
+
+**Files:** `Sources/Luna/LinkMetadata.swift`, `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/NoteRefinementsTests.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, `CHANGELOG.md`.
+
+**Verification:** Focused metadata and live WebKit regressions passed, including relative image URLs, secure image priority, image rendering and failure fallback, and unchanged note source. Full Swift suite passed. Impeccable layout detector reported no findings, and `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and visibly checked the real Suno Bookmark: its Open Graph image crops into the left side of the compact card, with the favicon, shortened title, description, and full URL on the right. All four saved note-text fingerprints matched before and after relaunch.
+
+**Limitations / release status:** Images depend on the page publishing a loadable HTTPS preview image. Local follow-up for review, not published.
+
+## 2026-10-05 — Follow-up: keep link display menus above the footer
+
+**Request:** The Display as dropdown should be highest in the stack; the screenshot showed its lower choices disappearing behind the bottom bar.
+
+**Diagnosis and correction:** A live WebKit regression reproduced the actual failure: the menu was in front of editor content, but its box extended beyond the WebKit viewport, where CSS z-index cannot cover Luna's native footer. Block style menus now use viewport positioning, open above the trigger when there is insufficient room below, clamp horizontally and vertically within the editor, and scroll internally in very short viewports. Their z-index is 1000, above the other editor popovers. Open menus reposition on scroll or resize. This explicitly corrects the earlier October 4 block menu behavior without changing link source or options.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, `CHANGELOG.md`.
+
+**Verification:** The focused live WebKit test failed before the fix (`visible:false,front:true`) and passed after it (`visible:true,front:true`) with a Bookmark menu near the editor's bottom edge. The full Swift suite passed all 108 tests (93 Luna, 15 LunaCore); the Impeccable layout detector and `git diff --check` found no issues. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and visibly opened the real Suno Bookmark's Display as menu near the footer: all five choices appeared above the trigger, over the note content, and within the editor. All four saved note-text fingerprints matched before and after relaunch. A separate installed `/Applications/Luna.app` process was also running during this check; the verified window and binary were the worktree build.
+
+**Limitations / release status:** Local follow-up for review, not published.
+
+## 2026-10-05 — Follow-up: make URL links quieter than note text
+
+**Request:** Deemphasize link color compared with the stronger light/dark note text.
+
+**Implementation:** Inline linked URLs and legacy linked-text figures now use Luna's existing muted palette (`#a0a4aa` in dark mode, `#606773` in light mode) instead of inheriting the body text color. Mention titles and Bookmark titles continue to inherit the stronger note text color, matching their role in the provided Notion reference. This is a visual follow-up to the Mention styling work.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `CHANGELOG.md`.
+
+**Verification:** Calculated text/link contrast against Luna's base surfaces: dark text 8.95:1 vs link 5.74:1, light text 13.86:1 vs link 5.36:1. `git diff --check` passed. The Impeccable detector reported only the pre-existing hidden favicon `<img>` without a `src`; the metadata loader sets its URL before showing it. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed the running executable path and matching Mach-O UUID with `.build/release/Luna`, and visually checked that the real Suno URLs are softer than the adjacent Mention titles and ordinary text. All four saved note-text fingerprints matched before and after relaunch. No new tests were added for this CSS-only color change.
+
+**Limitations / release status:** Local follow-up for review, not published.
+
+## 2026-10-05 — Follow-up: make Mentions sit flush with text
+
+**Request:** Match the Notion reference by removing the visible Mention background and padding so the favicon and title align with ordinary text.
+
+**Implementation:** The live note Mention anchor no longer has a tinted fill, hover/focus fill, border radius, or horizontal padding. Its icon/title spacing, metadata, tooltip, link actions, and caret behavior remain as before. This is a visual follow-up to the Mention feature and relaxed line spacing.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `CHANGELOG.md`.
+
+**Verification:** The Impeccable layout detector reported no findings, and `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed the running executable path and matching Mach-O UUID with `.build/release/Luna`, and visually checked that the two real Suno Mentions have no chip fill or outer padding and start at the same left edge as the URL text. All four saved note-text fingerprints matched before and after relaunch. No new tests were added for this CSS-only adjustment.
+
+**Limitations / release status:** Local follow-up for review, not published.
+
+## 2026-10-05 — Follow-up: relax live note line spacing
+
+**Request:** Increase the live note editor's line height a little for a more relaxed reading and editing rhythm, using the Notion screenshot as a reference.
+
+**Implementation:** The live media note body line-height is 1.8 instead of 1.65, and editable text blocks use a matching 1.8em minimum height. At the current 18-point setting, the line box is 32.4 CSS pixels, up from 29.7. This applies to live note text, links, and Mentions. This is a local visual refinement of the preceding link/Mention work.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `CHANGELOG.md`.
+
+**Verification:** The Impeccable layout detector reported no findings, and `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running executable path and matching Mach-O UUID with `.build/release/Luna`, and visually checked the selected note's two URL lines and two Mention lines at 18 pt. All four saved note-text fingerprints matched before and after relaunch. No new tests were added for this CSS-only spacing change.
+
+**Limitations / release status:** Source text editor and Markdown preview retain their existing independent spacing. Local follow-up for review, not published.
+
+## 2026-10-05 — Follow-up: keep the caret after a Mention
+
+**Request:** Converting a link to Mention made the caret disappear, and clicking the Mention line placed the caret before the Mention rather than after it.
+
+**Diagnosis and correction:** A Mention style change rebuilds the live WebKit page, discarding the selection. A Mention that ends a line is also a noneditable anchor with no editable text after it, so WebKit places a new caret before the anchor. The editor now records the selected Mention's URL and occurrence before conversion and restores focus and a collapsed caret immediately after that Mention on the rebuilt page. Rendering appends an invisible editable caret position to a line-ending Mention, and source serialization removes that character so saved notes are unchanged. Clicking the empty space to the right of a line-ending Mention places the caret after it. Rechoosing Mention on an existing Mention also moves the caret after it. This corrects the preceding Bookmark/Mention implementation.
+
+**Files:** `Sources/Luna/InlineLinks.swift`, `MediaNoteView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** A live WebKit regression covers a second Mention of the same URL, selection restoration after the page reload, clicking after the Mention, typing continued text, and exact source persistence without the invisible character. The existing Bookmark-to-Mention regression now checks the caret after conversion. Focused `NoteEmbedsTests` passed (18 tests), and the full suite passed all 107 tests (92 Luna, 15 LunaCore); `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running executable path and matching Mach-O UUID with `.build/release/Luna`, and visibly verified that clicking to the right of an existing Mention places the caret immediately after it. All four saved note-text fingerprints matched before and after relaunch.
+
+**Limitations / release status:** Local follow-up for review, not published.
+
+## 2026-10-05 — Follow-up: keyboard navigation in link display menus
+
+**Request:** Move through the Display as choices with Up and Down arrow keys, as shown in the inline-link menu screenshot.
+
+**Implementation:** The live editor now handles Up/Down for both the inline-link popover and block `<details>` display menus. The first Down selects the first choice, the first Up selects the last, and subsequent arrows wrap at the ends. Return clicks the highlighted choice, and Escape closes the menu without changing the note. A capture-phase key handler consumes these keys before the editor's text and slash-command handlers. The keyboard highlight suppresses a stationary pointer's hover highlight so only one choice appears selected; moving the pointer resumes hover behavior. The highlight clears on dismissal or when the menu is rebuilt; edit-link text fields retain normal arrow-key behavior.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, `CHANGELOG.md`.
+
+**Verification:** Focused live-WebKit regressions passed for inline and Bookmark menus, including arrow movement, Return, Escape, and Plain Text caret placement. The final full Swift suite passed all 106 tests (91 Luna, 15 LunaCore); `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed the running executable path and matching Mach-O UUID with `.build/release/Luna`, and visibly checked that successive Down presses highlight Mention then Linked Text with one highlight at a time; Escape closed the menu without changing the note. All four saved note-text fingerprints matched before and after relaunch.
+
+**Limitations / release status:** Local follow-up for review, not published.
+
+## 2026-10-05 — Follow-up: Bookmark and Mention link displays
+
+**Request:** Choosing Preview Chip reopened Display as; a chip prevented ⌘A from selecting across the note; rename the style Bookmark; add a Notion-like Mention; fetch favicon, title, and description for Bookmark and Mention; and put the caret after the URL when choosing Plain Text.
+
+**Diagnosis and implementation:** Live URL paste queued a style menu for the next WebKit load even though it opened the menu immediately; converting to a block caused that stale queue to reopen. Live paste no longer queues a second menu. The rich editor handles ⌘A across text and bookmark figures and can clear that selection with Backspace or Delete. macOS's Edit menu explicitly routes Select All through the focused rich editor or native editor. A running-app check then showed that WebKit's cross-block DOM selection contained all text but was not painted visibly, so Luna now highlights every selected block and handles whole-note copying as source text. Plain Text focuses its text block and places the caret after the inserted URL. The style menu calls Preview Chip “Bookmark” and adds Mention. New bookmarks save as `[Bookmark](url)` and mentions as `[Mention](url)`; legacy `[Preview](url)` sources still render as bookmarks. A bounded metadata fetch reads title, description, and favicon from page HTML, including social preview metadata when a site serves it only to preview clients. Bookmark cards display all three fields; inline mentions display the favicon and title, with description in a hover/focus detail view. Metadata updates do not rewrite note source. Missing metadata falls back to the host/URL.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `InlineLinks.swift`, `LinkMetadata.swift`, `NoteEmbeds.swift`, `URLPasteChoice.swift`, `Workspace.swift`, `main.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, `EditorBehaviorTests.swift`, `NoteRefinementsTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** Focused WebKit regressions pass for menu dismissal after converting a freshly pasted link, whole-note selection, visible highlighting and clearing across a bookmark, the Edit menu Select All route in both rich and regular editors, Plain Text caret placement, Bookmark/Mention conversion, and rendering all three metadata fields without changing source. Metadata parsing tests cover escaped title/description and relative favicon URLs. The final full suite passed all 104 tests (89 Luna, 15 LunaCore), and `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running executable path and matching Mach-O UUID with `.build/release/Luna`, and visibly verified ⌘A highlights all text blocks and the real Suno bookmark card. Copying that selection pasted the complete saved note text into a temporary local document, which was then removed. The card showed its favicon, playlist title, and description; an isolated review note showed the inline Mention with the same favicon/title and an accessible description. Four existing note-text fingerprints matched after relaunch; isolated review data was removed.
+
+**Limitations / release status:** Sites without page metadata use the host/URL fallback; remote favicons can fail to load. Local follow-up for review, not published.
+
+## 2026-10-05 — Follow-up: align pasted links with note text
+
+**Request:** A pasted clickable URL appeared indented to the right of the note header and regular editor text.
+
+**Diagnosis and correction:** The paste inserted the link at the caret without leading whitespace. The live editor's `article` had `max-width:72ch` and `margin:auto`, which centered the whole text column on wide windows. Its left edge was 308 points in a 1,400-point test body despite a 40-point body inset. The rich editor now uses the same left inset as regular note text while keeping the 72-character line width.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** A live WebKit layout regression failed before the correction (link and article at 308 points) and passed after (both at the 40-point inset). All 98 Swift tests passed (83 Luna, 15 LunaCore); `git diff --check` and the Impeccable layout detector found no issues. The development release build and nested code-signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and visually confirmed the selected note's link aligns with its header. All four note-text fingerprints matched before and after relaunch.
+
+**Release status:** Local follow-up for review; not published.
+
+## 2026-10-05 — Follow-up: clear empty live notes after deleting link blocks
+
+**Request:** The live editor could retain a line that would not delete and show two “Write something…” placeholders after clearing a note.
+
+**Diagnosis and correction:** Backspace or forward Delete removed a link figure between two contenteditable text regions but left those regions separate to preserve the live caret. The serializer joined the empty regions with a newline, and WebKit's empty-editor filler could serialize as additional invisible newlines. The link-deletion handler now joins adjacent text regions, keeps the caret at their former boundary, and removes WebKit filler after deleting the last text. Two empty regions become one empty editable region. This explicitly corrects the October 4 keyboard link-block deletion behavior.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** A live WebKit regression failed on the prior implementation with two editors and lingering newlines; it now passes and checks one editor, one placeholder, empty serialized text, and empty workspace text after Backspace and text deletion. A second regression checks forward Delete joins surrounding text and retains focus. All 97 Swift tests passed (82 Luna, 15 LunaCore); `git diff --check` passed. The development release build and nested code-signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and verified that all four existing note-text fingerprints matched before and after relaunch. The affected note contained only two saved newline characters from the earlier behavior; cleared those through the opened editor, confirmed it saved as empty, and confirmed the other three notes remained unchanged.
+
+**Release status:** Local follow-up for review; not published.
+
+## 2026-10-05 — Follow-up: place link dropdown beside the link on the right
+
+**Request:** The Display as dropdown obscured the link by appearing to its left. Keep it on the right and narrow it when the window edge is close.
+
+**Correction:** The previous popover position used the link rectangle's left edge and allowed a 230-point minimum width. Inline link menus now anchor to the right edge of the link's last visible fragment. Display choices prefer a 190-point width, shrink to available right-side space, and use tighter typography and padding below 140 points. If even the minimum useful width cannot fit, the menu stays against the right window edge below the link instead of jumping to the far left. The slash menu retains its prior placement.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** A live WebKit regression checks that Display as stays to the right, fits within the viewport, and switches to compact typography with 114 points of available space. The final full suite passed all 95 tests (80 Luna, 15 LunaCore). The design detector and `git diff --check` found no issues. Development release build and nested code-signature verification passed. Opened the current worktree's `dist/Luna.app`, confirmed its running path and matching release-binary UUID, and visually verified the Display as menu opens immediately to the right of the real note's link. All four existing note-text fingerprints matched before and after relaunch.
+
+**Release status:** Local follow-up for review; not published.
+
+## 2026-10-05 — Notion-inspired inline links and slash commands
+
+**Request:** Apply the Notion desktop editor behaviors inspected in the preceding task, focusing on links and slash commands. Preserve Luna's simpler text editor and the existing after-paste display choices.
+
+**Implementation:** A pasted URL now stores `[URL](url)` at the caret without surrounding newlines. Valid Markdown web links render inside an editable text paragraph rather than as separate link figures. Clicking one opens a compact menu to open or copy the destination, edit title and URL, remove the link, or change its display to plain text, preview chip, or embed. The initial display choices dismiss on click-away and on Linked Text. Inline Backspace and forward Delete at an adjacent caret remove the link without reloading the live page. Rich clipboard paste is constrained to plain text. In both the native source editor and the live editor, `/` at the start of a line opens a searchable, categorized menu with text, headings, quotes, lists, code block, and divider commands; arrows/Return choose, Escape leaves the slash. Commands insert Luna's Markdown-style source prefixes. Existing preview chips, embeds, media, fenced code, and source view remain readable. Inline link labels and destinations round-trip through recovery source.
+
+**Files:** `Sources/Luna/InlineLinks.swift`, `NoteEmbeds.swift`, `URLPasteChoice.swift`, `MediaNoteView.swift`, `EditorView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, `EditorBehaviorTests.swift`, and `CHANGELOG.md`. The preceding October 4 link edits in `Workspace.swift` are retained.
+
+**Corrections and verification:** Focused WebKit tests exercise inline paste within prose, click-away and Linked Text dismissal, title/URL editing, preview/embed conversion, Backspace/Delete, and slash search/insertion. A native slash test initially used a temporary bare `NSWindow`; in a full suite it exposed an AppKit window-animation crash after that test, so the test was corrected to use Luna's normal isolated workspace window. The final full suite passed all 95 tests (80 Luna, 15 LunaCore). Development release build, nested code-signature verification, and `git diff --check` passed. Opened the current worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and visually checked that the real note shows inline clickable URLs and a link menu that closes on click-away. All four existing note-text SHA-256 fingerprints matched before and after relaunch.
+
+**Limitations / release status:** Slash commands insert textual Markdown markers; the live editor does not render full Notion-style blocks or formatting controls. This is a local review build, not a published release.
+
+## 2026-10-04 — Follow-up: keep link controls reachable and support keyboard deletion
+
+**Request:** Display as vanishes while the pointer crosses from the URL to its control. Backspace and Delete should remove link blocks during editing without requiring the X button.
+
+**Diagnosis and correction:** The previous hover selector depended on hovering the anchor itself, so leaving the text hid its neighboring control. The whole link figure now holds the control visible across that gap. A dismissed menu stays hidden until the pointer leaves that figure or the control receives focus, then can be revealed again; choosing Linked Text after another style also suppresses the control after the view refresh. In the live editor, Backspace at the start of an editable text block removes an immediately preceding URL block; Delete (forward delete) at its end removes an immediately following URL block. The handler leaves nonboundary text editing to WebKit, keeps the caret in the text block without reloading the page, and persists the structural change. This corrects the earlier October 4 implementation without changing saved link syntax.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, `EditorBehaviorTests.swift`, and `CHANGELOG.md`.
+
+**Verification / correction:** A live WebKit regression failed first for both Backspace and Delete, then passed after the handler was added; it also verifies the menu's dismissed state resets when the pointer leaves and that keyboard deletion keeps the live page loaded. A full-suite run exposed an unrelated preview-title test race: the real `example.com` title overwrote the test's injected title. Changed that fixture to a non-serving loopback URL; the final full suite passed all 93 Swift tests (78 Luna, 15 LunaCore). Development release build and nested code-signature verification passed. Gracefully reopened this worktree's `dist/Luna.app`, confirmed its running path and matching release-binary UUID, and visually checked the selected note with links and no persistent Display as labels. All four existing note-text SHA-256 fingerprints matched before and after relaunch. `git diff --check` passed; temporary debug instrumentation was removed.
+
+**Release status:** Local follow-up only; not published.
+
+## 2026-10-04 — Follow-up: dismiss the link display control
+
+**Request:** After a URL paste, clicking away from the Display as dropdown or choosing Linked Text should leave only the clickable URL visible, without a persistent Display as label.
+
+**Diagnosis and correction:** The `<details>` menu had no outside-click handler, its trigger was always visible, and selecting Linked Text rewrote an already linked block unnecessarily. The live note now closes open style menus on outside click and keeps the trigger out of normal view. Hovering the link, focusing the trigger, or opening the menu reveals it again. Choosing the current style closes the menu without rewriting the note. This explicitly corrects the first October 4 implementation below.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/NoteEmbedsTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** The live WebKit regression failed on the prior implementation: click-away left the menu open and the trigger visible, while Linked Text left the trigger visible. It passes with the correction. All 92 Swift tests passed (77 Luna, 15 LunaCore). Development release build and nested code-signature verification passed. Two copies were open against the same recovery store; the installed copy showed stale note text, so it was closed without a recovery write before gracefully quitting the current worktree copy. Reopened this worktree's `dist/Luna.app`, confirmed its running path and binary UUID match `.build/release/Luna`, and visually confirmed the links appear without persistent Display as labels. All four note-text fingerprints matched a private temporary backup made before relaunch; that backup was removed after comparison. `git diff --check` passed.
+
+**Release status:** Local follow-up only; not published.
+
+## 2026-10-04 — Paste URLs as clickable text, then change their display
+
+**Request:** Replace the blocking URL paste chooser with immediate insertion of clickable URL text, then offer the plain text, linked text, preview chip, and embed choices after paste, as shown in the supplied Figma reference.
+
+**Implementation:** Both the native editor and live note view now turn a pasted web URL or iframe URL into a persistent `[URL](url)` link block. The live view renders its visible label as the full URL and opens its Display as menu after paste. Existing links, preview chips, and embeds retain a Display as menu so their style can be changed later. Style changes rewrite only the selected block’s stored source and refresh the live view. Plain Text converts that block into editable bare URL text. The previous modal chooser is removed. Existing custom link labels and saved formats remain readable.
+
+**Files:** `Sources/Luna/URLPasteChoice.swift`, `EditorView.swift`, `MediaNoteView.swift`, `Workspace.swift`, `Tests/LunaTests/EditorBehaviorTests.swift`, `NoteEmbedsTests.swift`, and `CHANGELOG.md`.
+
+**Verification:** All 92 Swift tests passed (77 Luna, 15 LunaCore). The live WebKit regression confirms URL text, the opened menu, all four style choices, and recovery persistence. Development release build and nested code-signature verification passed. Gracefully quit the installed app and opened this worktree's `dist/Luna.app`; its running executable path is the worktree build, and its binary UUID matches `.build/release/Luna`. All four existing note-text SHA-256 fingerprints matched before and after relaunch. `git diff --check` passed.
+
+**Limitations / release status:** Local implementation only; no release has been published. Website owners can block iframe embeds. A link converted to bare plain text no longer has the style menu until made into a link again.
+
 
 
 

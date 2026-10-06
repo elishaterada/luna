@@ -1,6 +1,109 @@
 import AppKit
 
 final class EditorView: NSTextView {
+    private struct SlashCommand {
+        let group: String
+        let title: String
+        let search: String
+        let insertion: String
+    }
+    private static let slashCommands: [SlashCommand] = [
+        .init(group: "Basic blocks", title: "Text", search: "paragraph", insertion: ""),
+        .init(group: "Basic blocks", title: "Heading 1", search: "h1 heading", insertion: "# "),
+        .init(group: "Basic blocks", title: "Heading 2", search: "h2 heading", insertion: "## "),
+        .init(group: "Basic blocks", title: "Quote", search: "quote", insertion: "> "),
+        .init(group: "Lists", title: "Bulleted list", search: "bullet list", insertion: "• "),
+        .init(group: "Lists", title: "Numbered list", search: "number list", insertion: "1. "),
+        .init(group: "Lists", title: "To-do list", search: "todo checkbox list", insertion: "☐ "),
+        .init(group: "More", title: "Code block", search: "code", insertion: "```\n\n```"),
+        .init(group: "More", title: "Divider", search: "divider rule", insertion: "---")
+    ]
+    private let slashPopover = NSPopover()
+    private var slashMatches: [SlashCommand] = []
+    private var slashSelection = 0
+    private var dismissedSlashQuery: String?
+    private var applyingSlashCommand = false
+    private func slashContext() -> (range: NSRange, query: String)? {
+        guard formatsLists, isEditable, !hasMarkedText(), selectedRange().length == 0 else { return nil }
+        let source = string as NSString, location = selectedRange().location
+        guard location <= source.length else { return nil }
+        let line = source.lineRange(for: NSRange(location: location, length: 0))
+        let prefix = source.substring(with: NSRange(location: line.location, length: location - line.location))
+        guard let match = prefix.range(of: #"^[ \t]*/([^\n]*)$"#, options: .regularExpression) else { return nil }
+        let query = String(prefix[match].drop { $0 != "/" }.dropFirst()).lowercased()
+        let before = source.substring(to: line.location)
+        let fences = before.components(separatedBy: "\n").filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("```") || $0.trimmingCharacters(in: .whitespaces).hasPrefix("~~~") }
+        guard fences.count.isMultiple(of: 2) else { return nil }
+        let slashOffset = (prefix as NSString).range(of: "/").location
+        return (NSRange(location: line.location + slashOffset, length: location - line.location - slashOffset), query)
+    }
+    private func updateSlashPopover() {
+        guard !applyingSlashCommand, let context = slashContext(), context.query != dismissedSlashQuery,
+              let window, window.firstResponder === self, !isHidden else {
+            slashPopover.close(); return
+        }
+        slashMatches = Self.slashCommands.filter { ($0.title + " " + $0.search).localizedCaseInsensitiveContains(context.query) }
+        guard !slashMatches.isEmpty else { slashPopover.close(); return }
+        slashSelection = 0
+        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        var group = ""
+        for (index, command) in slashMatches.enumerated() {
+            if command.group != group {
+                group = command.group
+                let heading = NSTextField(labelWithString: group)
+                heading.font = .systemFont(ofSize: 11); heading.textColor = .secondaryLabelColor
+                stack.addArrangedSubview(heading)
+            }
+            let button = NSButton(title: command.title, target: self, action: #selector(chooseSlashCommand(_:)))
+            button.tag = index; button.isBordered = false; button.alignment = .left
+            button.font = .systemFont(ofSize: 13)
+            button.contentTintColor = index == slashSelection ? Theme.mint : .labelColor
+            button.widthAnchor.constraint(equalToConstant: 206).isActive = true
+            stack.addArrangedSubview(button)
+        }
+        let controller = NSViewController(); controller.view = stack
+        slashPopover.contentViewController = controller
+        slashPopover.behavior = .transient
+        slashPopover.animates = false
+        slashPopover.contentSize = NSSize(width: 222, height: stack.fittingSize.height)
+        if !slashPopover.isShown {
+            let caret = firstRect(forCharacterRange: selectedRange(), actualRange: nil)
+            let rect = convert(window.convertFromScreen(caret), from: nil)
+            slashPopover.show(relativeTo: rect, of: self, preferredEdge: .maxY)
+        }
+    }
+    @objc private func chooseSlashCommand(_ sender: NSButton) { applySlashCommand(at: sender.tag) }
+    var slashMenuVisible: Bool { slashPopover.isShown }
+    func chooseSlashCommand(named title: String) {
+        guard let index = slashMatches.firstIndex(where: { $0.title == title }) else { return }
+        applySlashCommand(at: index)
+    }
+    private func applySlashCommand(at index: Int) {
+        guard slashMatches.indices.contains(index), let context = slashContext() else { return }
+        applyingSlashCommand = true; slashPopover.close()
+        let command = slashMatches[index]
+        insertText(command.insertion, replacementRange: context.range)
+        if command.title == "Code block" { setSelectedRange(NSRange(location: context.range.location + 4, length: 0)) }
+        applyingSlashCommand = false; dismissedSlashQuery = nil
+    }
+    override func keyDown(with event: NSEvent) {
+        if slashPopover.isShown {
+            switch event.keyCode {
+            case 125, 126:
+                slashSelection = (slashSelection + (event.keyCode == 125 ? 1 : -1) + slashMatches.count) % slashMatches.count
+                let buttons = (slashPopover.contentViewController?.view as? NSStackView)?.arrangedSubviews.compactMap { $0 as? NSButton } ?? []
+                for (index, button) in buttons.enumerated() {
+                    button.contentTintColor = index == slashSelection ? Theme.mint : .labelColor
+                }
+                return
+            case 36, 76: applySlashCommand(at: slashSelection); return
+            case 53: dismissedSlashQuery = slashContext()?.query; slashPopover.close(); return
+            default: break
+            }
+        }
+        super.keyDown(with: event)
+    }
     var formatsLists = true {
         didSet {
             guard formatsLists != oldValue, let storage = textStorage else { return }
@@ -85,6 +188,7 @@ final class EditorView: NSTextView {
         resetCurrencySuggestion()
         dismissedCalculation = nil
         needsDisplay = true
+        if slashPopover.isShown { DispatchQueue.main.async { [weak self] in self?.updateSlashPopover() } }
     }
 
     override func cancelOperation(_ sender: Any?) {
@@ -101,11 +205,9 @@ final class EditorView: NSTextView {
     var onEmbedPaste: ((String) -> Void)?
     override func paste(_ sender: Any?) {
         if let value = NSPasteboard.general.string(forType: .string),
-           let choice = URLPasteChoice.choose(value) {
-            if let snippet = choice.snippet {
-                if choice.live, let onEmbedPaste { onEmbedPaste(snippet) }
-                else { insertText(snippet, replacementRange: selectedRange()) }
-            }
+           let snippet = URLPasteChoice.linkedSnippet(for: value) {
+            if let onEmbedPaste { onEmbedPaste(snippet) }
+            else { insertText(snippet, replacementRange: selectedRange()) }
             return
         }
         super.paste(sender)
@@ -173,6 +275,8 @@ final class EditorView: NSTextView {
         resetCurrencySuggestion()
         // TextKit redraws glyphs independently; invalidate our empty-state drawing too.
         needsDisplay = true
+        dismissedSlashQuery = nil
+        DispatchQueue.main.async { [weak self] in self?.updateSlashPopover() }
     }
 
     override func draw(_ dirtyRect: NSRect) {

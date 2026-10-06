@@ -214,6 +214,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             self.loading = true; self.editor.string = source; self.loading = false
             self.updateHeader(); self.scheduleRecovery(); self.reloadShelf()
         }
+        mediaView.onStructureChange = { [weak self] in self?.updatePreview() }
         updateFont()
         language.addItems(withTitles: ["Plain Text", "Markdown", "JavaScript", "TypeScript", "JSON", "YAML", "Environment", "Shell", "Python", "Swift", "CSS", "HTML", "Configuration"])
         language.isBordered = false; language.font = .systemFont(ofSize: 11); language.target = self; language.action = #selector(changeLanguage)
@@ -532,7 +533,15 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     @objc func newNote() { guard flushRecovery() else { return }; let note = Note(); notes.insert(note, at: 0); reloadShelf(); select(note.id, focusContent: true); persistCurrent(); showWindow(nil) }
     func insertEmbed(_ snippet: String) {
         editor.insertText(snippet, replacementRange: editor.selectedRange())
+        mediaView.queueStyleMenu(for: snippet)
         richEditing = true; updatePreview(); focusContent()
+    }
+    @objc func selectAllContent(_ sender: Any?) {
+        let focusedView = window?.firstResponder as? NSView
+        if richEditing && !mediaView.isHidden &&
+            (focusedView === mediaView || focusedView?.isDescendant(of: mediaView) == true) { mediaView.selectAllNote() }
+        else if focusedView === editor || focusedView?.isDescendant(of: editor) == true { editor.selectAll(sender) }
+        else { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: window?.firstResponder, from: sender) }
     }
     func importMedia(_ urls: [URL], range: NSRange? = nil) {
         guard let id = selectedID else { return }

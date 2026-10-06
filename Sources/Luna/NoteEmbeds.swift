@@ -65,9 +65,9 @@ enum NoteEmbeds {
                let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
                let labelRange = Range(match.range(at: 1), in: trimmed),
                let urlRange = Range(match.range(at: 2), in: trimmed),
-               String(trimmed[labelRange]) != "Embed", let url = webURL(String(trimmed[urlRange])) {
+               ["Preview", "Bookmark"].contains(String(trimmed[labelRange])), let url = webURL(String(trimmed[urlRange])) {
                 let label = String(trimmed[labelRange])
-                flush(); blocks.append(.link(source: line, url: url, label: label, preview: label == "Preview")); continue
+                flush(); blocks.append(.link(source: line, url: url, label: label, preview: true)); continue
             }
             if let url = (trimmed.hasPrefix("[Embed](") ? webURL(candidate) : nil) ?? iframeURL(trimmed) {
                 flush(); blocks.append(.embed(source: line, url: url)); continue
@@ -79,7 +79,10 @@ enum NoteEmbeds {
     }
     static func hasContent(_ source: String) -> Bool {
         guard source.utf8.count <= 2_000_000 else { return false }
-        return blocks(source).contains { if case .text = $0 { return false }; return true }
+        return blocks(source).contains {
+            if case .text(let text) = $0 { return InlineLinks.containsLink(text) }
+            return true
+        }
     }
     static func escape(_ value: String) -> String {
         value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")

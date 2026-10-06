@@ -223,7 +223,7 @@ extension EditorBehaviorTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        var note = Note(text: "Start\n[Preview](https://example.com)", path: root.appendingPathComponent("note.txt").path)
+        var note = Note(text: "Start\n[Preview](http://127.0.0.1:1/preview-test)", path: root.appendingPathComponent("note.txt").path)
         note.dirty = true
         try store.save(note)
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
@@ -241,7 +241,7 @@ extension EditorBehaviorTests {
         _ = try await view.evaluateJavaScript("const block=document.querySelector('.text');block.innerText='';block.focus();document.execCommand('insertText',false,'- [ ] Task');")
         _ = try await view.callAsyncJavaScript("resolvePreview(0, title)", arguments: ["title": "A page title <safe>"], in: nil, contentWorld: .page)
         let previewTitle = try await view.evaluateJavaScript("document.querySelector('[data-preview]').textContent") as? String
-        XCTAssertEqual(previewTitle, "A page title <safe> ↗")
+        XCTAssertEqual(previewTitle, "A page title <safe>")
         let text = try await view.evaluateJavaScript("document.querySelector('.text').innerText") as? String
         XCTAssertEqual(text, "☐ Task")
         _ = try await view.evaluateJavaScript("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));")
@@ -250,15 +250,66 @@ extension EditorBehaviorTests {
     }
     func testURLPasteChoicesHaveDistinctPersistentRendering() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/path"))
+        XCTAssertEqual(URLPasteChoice.linkedSnippet(for: url.absoluteString), "[URL](https://example.com/path)")
+        XCTAssertEqual(URLPasteChoice.linkedSnippet(for: "<iframe src='https://example.com/path'></iframe>"), "[URL](https://example.com/path)")
+        XCTAssertNil(URLPasteChoice.linkedSnippet(for: "file:///private/secret"))
         XCTAssertFalse(NoteEmbeds.hasContent(URLPasteChoice.plain.snippet(for: url)))
-        for choice in [URLPasteChoice.linked, .preview, .embed] {
+        XCTAssertEqual(URLPasteChoice.preview.title, "Bookmark")
+        XCTAssertEqual(URLPasteChoice.mention.snippet(for: url), "[Mention](https://example.com/path)")
+        XCTAssertEqual(URLPasteChoice.preview.snippet(for: url), "\n[Bookmark](https://example.com/path)\n")
+        for choice in [URLPasteChoice.linked, .mention, .preview, .embed] {
             let source = choice.snippet(for: url)
             XCTAssertTrue(NoteEmbeds.hasContent(source))
             XCTAssertEqual(NoteEmbeds.blocks(source).map(\.source).joined(separator: "\n"), source)
             let html = MediaNoteView.page(Note(text: source), fontSize: 18, dark: true, pageID: "test")
             XCTAssertEqual(html.contains("<iframe data-embed="), choice == .embed)
-            if choice == .preview { XCTAssertTrue(html.contains("class=\"link-chip\"")) }
-            if choice == .linked { XCTAssertTrue(html.contains("class=\"linked-text\"")) }
+            if choice == .preview { XCTAssertTrue(html.contains("class=\"link-chip bookmark\"")) }
+            if choice == .linked { XCTAssertTrue(html.contains("class=\"inline-link\"")) }
+            if choice == .mention { XCTAssertTrue(html.contains("class=\"inline-link mention-link\"")) }
         }
+    }
+    @MainActor func testEditMenuSelectAllStillWorksInRegularEditor() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
+        try store.save(Note(text: "Ordinary text"))
+        let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        workspace.showWindow(nil)
+        workspace.window?.makeFirstResponder(workspace.editor)
+        let delegate = AppDelegate(); delegate.workspace = workspace
+        delegate.selectAllContent(nil)
+        XCTAssertEqual(workspace.editor.selectedRange(), NSRange(location: 0, length: 13))
+    }
+    @MainActor func testNativeSlashMenuSearchAndSelection() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
+            skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        workspace.showWindow(nil)
+        let editor = workspace.editor
+        workspace.window?.makeFirstResponder(editor)
+        editor.insertText("/h2", replacementRange: NSRange(location: 0, length: 0))
+        for _ in 0..<40 {
+            if editor.slashMenuVisible { break }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTAssertTrue(editor.slashMenuVisible)
+        editor.chooseSlashCommand(named: "Heading 2")
+        XCTAssertEqual(editor.string, "## ")
+        for _ in 0..<40 {
+            if !editor.slashMenuVisible { break }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTAssertFalse(editor.slashMenuVisible)
+        editor.insertText("/bullet", replacementRange: editor.selectedRange())
+        for _ in 0..<40 {
+            if editor.slashMenuVisible { break }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTAssertFalse(editor.slashMenuVisible, "Slash commands only appear at the start of a line")
     }
 }

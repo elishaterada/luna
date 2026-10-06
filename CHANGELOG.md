@@ -1,5 +1,21 @@
 # Luna release notes
 
+## 0.11.0 — 2026-10-05
+
+- Bookmarks now show a page’s preview image beside its favicon, title, description, and URL when the page provides one.
+- Link display menus stay above editor content and open upward near the bottom so every choice remains visible.
+- Linked URLs use a softer gray than note text in both light and dark mode; Mention titles retain the note text color.
+- Mentions now sit flush with note text, without a chip background or padding.
+- The live note editor uses more relaxed line spacing, with a 1.8 line height.
+- Choosing Mention now leaves the caret after it so typing can continue. Clicking the space after a Mention at the end of a line also places the caret there.
+- Use ↑ and ↓ to move through a link’s Display as choices, Return to apply one, and Escape to close the menu. This also works on Bookmark cards.
+- Link display choices now include Mention and Bookmark. Bookmarks show a page favicon, title, and description; mentions show the favicon and title inline, with the description on hover or focus. Existing preview chips remain readable as bookmarks.
+- Choosing Bookmark no longer reopens the paste menu. ⌘A visibly selects all note text and bookmarks, and choosing Plain Text leaves the caret at the end of the URL.
+- Links and other rich note content now start at the same left inset as regular note text, while retaining a comfortable maximum line width.
+- Removing a link block with Backspace or Delete now joins the text on either side. Clearing the remaining text leaves one empty place to type, without duplicate placeholders or a hidden blank line.
+- Pasted web URLs now stay clickable within the surrounding paragraph. Click a link to edit its title or URL, copy or open it, or change it to plain text, a bookmark, or an embed. The display menu opens beside the link on the right and narrows near the window edge; it closes when you choose Linked Text or click away. Backspace or Delete removes an inline link at the caret.
+- Type `/` at the start of a line to search for headings, lists, quotes, code blocks, dividers, and text. Use the arrow keys and Return to choose a command, or Escape to keep the slash as text.
+
 ## 0.10.0 — 2026-09-22
 
 - Scrolling either side of Source and Preview keeps both panes at the same relative position.
