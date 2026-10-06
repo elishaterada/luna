@@ -10,7 +10,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Preflight verification:** All 108 Swift tests (93 Luna, 15 LunaCore), four release-tool tests, stable version ordering, production build, nested app signature, and `git diff --check` passed. Opened this worktree's 0.11.0 `dist/Luna.app`, confirmed the real Suno Bookmark image card, and found all four saved note-text fingerprints unchanged.
 
-**Release verification / status:** Pending tag, GitHub workflow, public download checks, and installed-app update.
+**Release verification / status:** Published `v0.11.0` at `f0e8195`, build `20261006013256`. Release Luna run `37399706801` succeeded on its first attempt, including signed archive and appcast creation plus byte-for-byte public download verification. The public latest release has the 0.11.0 highlights, ZIP, and signed feed. The installed `/Applications/Luna.app` offered 0.11.0 from 0.10.0 with the correct highlights; Install Update and Install and Relaunch completed. Confirmed the installed version/build, running path, live Suno image Bookmark, all four notes in the sidebar, and unchanged text fingerprints for all four recovery records. Publication and installed-update verification complete. Implementation limitations remain in the entries below.
 
 ## 2026-10-05 — Follow-up: show Open Graph images in Bookmarks
 
@@ -22,7 +22,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** Focused metadata and live WebKit regressions passed, including relative image URLs, secure image priority, image rendering and failure fallback, and unchanged note source. Full Swift suite passed. Impeccable layout detector reported no findings, and `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and visibly checked the real Suno Bookmark: its Open Graph image crops into the left side of the compact card, with the favicon, shortened title, description, and full URL on the right. All four saved note-text fingerprints matched before and after relaunch.
 
-**Limitations / release status:** Images depend on the page publishing a loadable HTTPS preview image. Local follow-up for review, not published.
+**Limitations / release status:** Images depend on the page publishing a loadable HTTPS preview image. Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: keep link display menus above the footer
 
@@ -34,7 +34,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** The focused live WebKit test failed before the fix (`visible:false,front:true`) and passed after it (`visible:true,front:true`) with a Bookmark menu near the editor's bottom edge. The full Swift suite passed all 108 tests (93 Luna, 15 LunaCore); the Impeccable layout detector and `git diff --check` found no issues. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and visibly opened the real Suno Bookmark's Display as menu near the footer: all five choices appeared above the trigger, over the note content, and within the editor. All four saved note-text fingerprints matched before and after relaunch. A separate installed `/Applications/Luna.app` process was also running during this check; the verified window and binary were the worktree build.
 
-**Limitations / release status:** Local follow-up for review, not published.
+**Limitations / release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: make URL links quieter than note text
 
@@ -46,7 +46,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** Calculated text/link contrast against Luna's base surfaces: dark text 8.95:1 vs link 5.74:1, light text 13.86:1 vs link 5.36:1. `git diff --check` passed. The Impeccable detector reported only the pre-existing hidden favicon `<img>` without a `src`; the metadata loader sets its URL before showing it. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed the running executable path and matching Mach-O UUID with `.build/release/Luna`, and visually checked that the real Suno URLs are softer than the adjacent Mention titles and ordinary text. All four saved note-text fingerprints matched before and after relaunch. No new tests were added for this CSS-only color change.
 
-**Limitations / release status:** Local follow-up for review, not published.
+**Limitations / release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: make Mentions sit flush with text
 
@@ -58,7 +58,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** The Impeccable layout detector reported no findings, and `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed the running executable path and matching Mach-O UUID with `.build/release/Luna`, and visually checked that the two real Suno Mentions have no chip fill or outer padding and start at the same left edge as the URL text. All four saved note-text fingerprints matched before and after relaunch. No new tests were added for this CSS-only adjustment.
 
-**Limitations / release status:** Local follow-up for review, not published.
+**Limitations / release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: relax live note line spacing
 
@@ -70,7 +70,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** The Impeccable layout detector reported no findings, and `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running executable path and matching Mach-O UUID with `.build/release/Luna`, and visually checked the selected note's two URL lines and two Mention lines at 18 pt. All four saved note-text fingerprints matched before and after relaunch. No new tests were added for this CSS-only spacing change.
 
-**Limitations / release status:** Source text editor and Markdown preview retain their existing independent spacing. Local follow-up for review, not published.
+**Limitations / release status:** Source text editor and Markdown preview retain their existing independent spacing. Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: keep the caret after a Mention
 
@@ -82,7 +82,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** A live WebKit regression covers a second Mention of the same URL, selection restoration after the page reload, clicking after the Mention, typing continued text, and exact source persistence without the invisible character. The existing Bookmark-to-Mention regression now checks the caret after conversion. Focused `NoteEmbedsTests` passed (18 tests), and the full suite passed all 107 tests (92 Luna, 15 LunaCore); `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running executable path and matching Mach-O UUID with `.build/release/Luna`, and visibly verified that clicking to the right of an existing Mention places the caret immediately after it. All four saved note-text fingerprints matched before and after relaunch.
 
-**Limitations / release status:** Local follow-up for review, not published.
+**Limitations / release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: keyboard navigation in link display menus
 
@@ -94,7 +94,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** Focused live-WebKit regressions passed for inline and Bookmark menus, including arrow movement, Return, Escape, and Plain Text caret placement. The final full Swift suite passed all 106 tests (91 Luna, 15 LunaCore); `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed the running executable path and matching Mach-O UUID with `.build/release/Luna`, and visibly checked that successive Down presses highlight Mention then Linked Text with one highlight at a time; Escape closed the menu without changing the note. All four saved note-text fingerprints matched before and after relaunch.
 
-**Limitations / release status:** Local follow-up for review, not published.
+**Limitations / release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: Bookmark and Mention link displays
 
@@ -106,7 +106,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** Focused WebKit regressions pass for menu dismissal after converting a freshly pasted link, whole-note selection, visible highlighting and clearing across a bookmark, the Edit menu Select All route in both rich and regular editors, Plain Text caret placement, Bookmark/Mention conversion, and rendering all three metadata fields without changing source. Metadata parsing tests cover escaped title/description and relative favicon URLs. The final full suite passed all 104 tests (89 Luna, 15 LunaCore), and `git diff --check` passed. The development release build and nested signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running executable path and matching Mach-O UUID with `.build/release/Luna`, and visibly verified ⌘A highlights all text blocks and the real Suno bookmark card. Copying that selection pasted the complete saved note text into a temporary local document, which was then removed. The card showed its favicon, playlist title, and description; an isolated review note showed the inline Mention with the same favicon/title and an accessible description. Four existing note-text fingerprints matched after relaunch; isolated review data was removed.
 
-**Limitations / release status:** Sites without page metadata use the host/URL fallback; remote favicons can fail to load. Local follow-up for review, not published.
+**Limitations / release status:** Sites without page metadata use the host/URL fallback; remote favicons can fail to load. Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: align pasted links with note text
 
@@ -118,7 +118,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** A live WebKit layout regression failed before the correction (link and article at 308 points) and passed after (both at the 40-point inset). All 98 Swift tests passed (83 Luna, 15 LunaCore); `git diff --check` and the Impeccable layout detector found no issues. The development release build and nested code-signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and visually confirmed the selected note's link aligns with its header. All four note-text fingerprints matched before and after relaunch.
 
-**Release status:** Local follow-up for review; not published.
+**Release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: clear empty live notes after deleting link blocks
 
@@ -130,7 +130,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** A live WebKit regression failed on the prior implementation with two editors and lingering newlines; it now passes and checks one editor, one placeholder, empty serialized text, and empty workspace text after Backspace and text deletion. A second regression checks forward Delete joins surrounding text and retains focus. All 97 Swift tests passed (82 Luna, 15 LunaCore); `git diff --check` passed. The development release build and nested code-signature verification passed. Opened this worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and verified that all four existing note-text fingerprints matched before and after relaunch. The affected note contained only two saved newline characters from the earlier behavior; cleared those through the opened editor, confirmed it saved as empty, and confirmed the other three notes remained unchanged.
 
-**Release status:** Local follow-up for review; not published.
+**Release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Follow-up: place link dropdown beside the link on the right
 
@@ -142,7 +142,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** A live WebKit regression checks that Display as stays to the right, fits within the viewport, and switches to compact typography with 114 points of available space. The final full suite passed all 95 tests (80 Luna, 15 LunaCore). The design detector and `git diff --check` found no issues. Development release build and nested code-signature verification passed. Opened the current worktree's `dist/Luna.app`, confirmed its running path and matching release-binary UUID, and visually verified the Display as menu opens immediately to the right of the real note's link. All four existing note-text fingerprints matched before and after relaunch.
 
-**Release status:** Local follow-up for review; not published.
+**Release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-05 — Notion-inspired inline links and slash commands
 
@@ -154,7 +154,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Corrections and verification:** Focused WebKit tests exercise inline paste within prose, click-away and Linked Text dismissal, title/URL editing, preview/embed conversion, Backspace/Delete, and slash search/insertion. A native slash test initially used a temporary bare `NSWindow`; in a full suite it exposed an AppKit window-animation crash after that test, so the test was corrected to use Luna's normal isolated workspace window. The final full suite passed all 95 tests (80 Luna, 15 LunaCore). Development release build, nested code-signature verification, and `git diff --check` passed. Opened the current worktree's `dist/Luna.app`, confirmed its running path and matching Mach-O UUID with `.build/release/Luna`, and visually checked that the real note shows inline clickable URLs and a link menu that closes on click-away. All four existing note-text SHA-256 fingerprints matched before and after relaunch.
 
-**Limitations / release status:** Slash commands insert textual Markdown markers; the live editor does not render full Notion-style blocks or formatting controls. This is a local review build, not a published release.
+**Limitations / release status:** Slash commands insert textual Markdown markers; the live editor does not render full Notion-style blocks or formatting controls. Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-04 — Follow-up: keep link controls reachable and support keyboard deletion
 
@@ -166,7 +166,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification / correction:** A live WebKit regression failed first for both Backspace and Delete, then passed after the handler was added; it also verifies the menu's dismissed state resets when the pointer leaves and that keyboard deletion keeps the live page loaded. A full-suite run exposed an unrelated preview-title test race: the real `example.com` title overwrote the test's injected title. Changed that fixture to a non-serving loopback URL; the final full suite passed all 93 Swift tests (78 Luna, 15 LunaCore). Development release build and nested code-signature verification passed. Gracefully reopened this worktree's `dist/Luna.app`, confirmed its running path and matching release-binary UUID, and visually checked the selected note with links and no persistent Display as labels. All four existing note-text SHA-256 fingerprints matched before and after relaunch. `git diff --check` passed; temporary debug instrumentation was removed.
 
-**Release status:** Local follow-up only; not published.
+**Release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-04 — Follow-up: dismiss the link display control
 
@@ -178,7 +178,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** The live WebKit regression failed on the prior implementation: click-away left the menu open and the trigger visible, while Linked Text left the trigger visible. It passes with the correction. All 92 Swift tests passed (77 Luna, 15 LunaCore). Development release build and nested code-signature verification passed. Two copies were open against the same recovery store; the installed copy showed stale note text, so it was closed without a recovery write before gracefully quitting the current worktree copy. Reopened this worktree's `dist/Luna.app`, confirmed its running path and binary UUID match `.build/release/Luna`, and visually confirmed the links appear without persistent Display as labels. All four note-text fingerprints matched a private temporary backup made before relaunch; that backup was removed after comparison. `git diff --check` passed.
 
-**Release status:** Local follow-up only; not published.
+**Release status:** Shipped in Luna 0.11.0 (release verification above).
 
 ## 2026-10-04 — Paste URLs as clickable text, then change their display
 
@@ -190,7 +190,7 @@ This log starts with the September 13, 2026 editor changes. Earlier shipped feat
 
 **Verification:** All 92 Swift tests passed (77 Luna, 15 LunaCore). The live WebKit regression confirms URL text, the opened menu, all four style choices, and recovery persistence. Development release build and nested code-signature verification passed. Gracefully quit the installed app and opened this worktree's `dist/Luna.app`; its running executable path is the worktree build, and its binary UUID matches `.build/release/Luna`. All four existing note-text SHA-256 fingerprints matched before and after relaunch. `git diff --check` passed.
 
-**Limitations / release status:** Local implementation only; no release has been published. Website owners can block iframe embeds. A link converted to bare plain text no longer has the style menu until made into a link again.
+**Limitations / release status:** Shipped in Luna 0.11.0 (release verification above). Website owners can block iframe embeds. A link converted to bare plain text no longer has the style menu until made into a link again.
 
 
 
