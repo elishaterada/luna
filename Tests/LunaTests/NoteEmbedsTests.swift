@@ -61,11 +61,11 @@ final class NoteEmbedsTests: XCTestCase {
             if (try? await view.evaluateJavaScript("document.querySelectorAll('a.inline-link').length")) as? Int == 1 { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        let rendered = try await view.evaluateJavaScript("document.querySelector('.text').innerText") as? String
+        let rendered = try await view.evaluateJavaScript("paragraphText(document.querySelector('.text'))") as? String
         XCTAssertEqual(rendered, "Before https://example.com After")
         _ = try await view.evaluateJavaScript("""
             const block=document.querySelector('.text');block.focus();
-            const range=document.createRange();range.setStart(block.firstChild,7);range.collapse(true);
+            const range=document.createRange();range.setStart(document.createTreeWalker(block,NodeFilter.SHOW_TEXT).nextNode(),7);range.collapse(true);
             getSelection().removeAllRanges();getSelection().addRange(range);
             window.webkit.messageHandlers.note.postMessage({page,kind:'paste',value:'https://example.org/path'});
             true

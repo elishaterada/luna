@@ -738,11 +738,12 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         if richEditing { mediaView.focusEditor() }
     }
     private var canFormatMarkdown: Bool {
-        index.map { notes[$0].language == "Markdown" } == true && !previewing && !richEditing && window?.firstResponder === editor
+        index.map { notes[$0].language == "Markdown" } == true && !previewing &&
+            (richEditing ? window?.firstResponder === mediaView : window?.firstResponder === editor)
     }
-    @objc func markdownBold() { if canFormatMarkdown { editor.toggleMarkdownMarker("**") } }
-    @objc func markdownItalic() { if canFormatMarkdown { editor.toggleMarkdownMarker("*") } }
-    @objc func markdownCode() { if canFormatMarkdown { editor.toggleMarkdownMarker("`") } }
+    @objc func markdownBold() { if canFormatMarkdown { if richEditing { mediaView.formatSelection("bold") } else { editor.toggleMarkdownMarker("**") } } }
+    @objc func markdownItalic() { if canFormatMarkdown { if richEditing { mediaView.formatSelection("italic") } else { editor.toggleMarkdownMarker("*") } } }
+    @objc func markdownCode() { if canFormatMarkdown { if richEditing { mediaView.formatSelection("code") } else { editor.toggleMarkdownMarker("`") } } }
 
     @objc func toggleSplitPreview() {
         guard index.map({ notes[$0].language == "Markdown" }) == true else { return }

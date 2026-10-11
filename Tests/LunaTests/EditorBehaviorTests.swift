@@ -4,6 +4,126 @@ import LunaCore
 @testable import Luna
 
 final class EditorBehaviorTests: XCTestCase {
+    @MainActor func testLiveWrappedListsKeepTheirBodyIndent() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
+        let body = "Build a art museum featuring real art from sculpture to paintings that are legal to display"
+        let original = "Help\n- \(body)\n12. \(body)\n  - \(body)\nOrdinary text"
+        try store.save(Note(text: original, language: "Markdown"))
+        let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        workspace.showWindow(nil)
+        let view = workspace.mediaView
+        for _ in 0..<100 {
+            if (try? await view.evaluateJavaScript("document.querySelectorAll('.list-marker').length")) as? Int == 3 { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let result = try await view.evaluateJavaScript("""
+            (()=>{
+              const block=document.querySelector('.text');block.style.width='320px';
+              const aligned=[...block.querySelectorAll('.list-marker')].map(marker=>{
+                const node=marker.nextSibling,range=document.createRange();
+                let first=null,wrap=null;
+                for(let i=0;i<node.length;i++) {
+                  if(/[\\s\\u200B]/.test(node.textContent[i]))continue;
+                  range.setStart(node,i);range.setEnd(node,i+1);
+                  const rect=[...range.getClientRects()].at(-1);
+                  if(!first)first=rect;else if(rect.top>first.top+1){wrap=rect;break;}
+                }
+                return !!wrap&&Math.abs(wrap.left-first.left)<1;
+              });
+              const singleLine=[...block.querySelectorAll('.list-marker:not(.bullet-marker)')].every(marker=>
+                marker.getBoundingClientRect().height<=parseFloat(getComputedStyle(block).lineHeight)+.1);
+              return [aligned,source(),singleLine];
+            })()
+            """) as? [Any]
+        let values = try XCTUnwrap(result)
+        XCTAssertEqual(values[0] as? [Bool], [true, true, true], "Wrapped bullets, numbers, and nested items align with their first body character")
+        XCTAssertEqual(values[1] as? String, original)
+        XCTAssertEqual(values[2] as? Bool, true, "Double-digit markers must stay on one visual line")
+        // Continue a loaded item through WebKit's native paragraph path, then
+        // indent/outdent it. Layout must not alter the portable source or Undo.
+        let continued = try await view.callAsyncJavaScript("""
+            const block=document.querySelector('.text'),marker=block.querySelectorAll('.list-marker')[1];
+            block.focus();const text=marker.nextSibling,range=document.createRange();range.setStart(text,text.length);range.collapse(true);
+            getSelection().removeAllRanges();getSelection().addRange(range);
+            const key=(key,shiftKey=false)=>document.dispatchEvent(new KeyboardEvent('keydown',{key,shiftKey,bubbles:true,cancelable:true}));
+            key('Enter');document.execCommand('insertText',false,body);key('Tab');key('Tab',true);
+            const node=getSelection().anchorNode,index=node.textContent.search(/[^\\s\\u200B]/),first=document.createRange();first.setStart(node,index);first.setEnd(node,index+1);
+            const firstRect=[...first.getClientRects()].at(-1);let wrapped=null;
+            for(let i=index+1;i<node.length;i++) {
+              if(/[\\s\\u200B]/.test(node.textContent[i]))continue;
+              const r=document.createRange();r.setStart(node,i);r.setEnd(node,i+1);
+              const rect=[...r.getClientRects()].at(-1);if(rect.top>firstRect.top+1){wrapped=rect;break;}
+            }
+            const before=source();document.execCommand('undo');const undone=source();document.execCommand('redo');
+            return [!!wrapped&&Math.abs(wrapped.left-firstRect.left)<1,before,source(),undone!==before];
+            """, arguments: ["body": body], in: nil, contentWorld: .page) as? [Any]
+        let expected = original.replacingOccurrences(of: "\n  - ", with: "\n13. \(body)\n  - ")
+        XCTAssertEqual(continued?[0] as? Bool, true)
+        XCTAssertEqual(continued?[1] as? String, expected)
+        XCTAssertEqual(continued?[2] as? String, expected)
+        XCTAssertEqual(continued?[3] as? Bool, true)
+        for _ in 0..<100 {
+            if workspace.editor.string == expected { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(workspace.editor.string, expected)
+        XCTAssertTrue(workspace.flushRecovery())
+        XCTAssertEqual(try store.load().first?.text, expected)
+    }
+    @MainActor func testTypedNestedListWrappingUsesItsOwnParagraph() async throws {
+        _ = NSApplication.shared
+        preference("editor.tabWidth", 4)
+        preference("editor.useTabs", false)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try RecoveryStore(directory: root)
+        try store.save(Note(text: "- Loaded item\n    - Loaded child", language: "Markdown"))
+        let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        workspace.showWindow(nil)
+        let view = workspace.mediaView
+        for _ in 0..<100 {
+            if (try? await view.evaluateJavaScript("typeof currentLine")) as? String == "function" { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let window = try XCTUnwrap(workspace.window)
+        window.makeFirstResponder(view)
+        _ = try await view.evaluateJavaScript("document.querySelector('.text').style.width='320px';document.querySelector('.text').focus();selectAllNote();")
+        func send(_ characters: String, _ code: UInt16, _ flags: NSEvent.ModifierFlags = []) throws {
+            window.sendEvent(try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: characters, charactersIgnoringModifiers: characters.lowercased(), isARepeat: false, keyCode: code)))
+        }
+        try send("\u{7f}", 51)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        for character in "- First museum" {
+            try send(String(character), character == "-" ? 27 : character == " " ? 49 : character == "F" ? 3 : 0, character.isUppercase ? .shift : [])
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        try send("\r", 36)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        _ = try await view.evaluateJavaScript("document.execCommand('insertText',false,'Build another museum with a sufficiently long description to wrap across multiple lines and remain aligned');")
+        try send("\t", 48)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let result = try await view.evaluateJavaScript("""
+            (()=>{
+              const block=document.querySelector('.text');
+              const marker=block.querySelectorAll('.list-marker')[1],node=marker.nextSibling,r=document.createRange();let first=null,wrap=null;
+              for(let i=0;i<node.length;i++) {
+                if(/[\\s\\u200B]/.test(node.textContent[i]))continue;
+                r.setStart(node,i);r.setEnd(node,i+1);const rect=[...r.getClientRects()].at(-1);
+                if(!first)first=rect;else if(rect.top>first.top+1){wrap=rect;break;}
+              }
+              return [!!wrap&&Math.abs(wrap.left-first.left)<1,source()];
+            })()
+            """) as? [Any]
+        XCTAssertEqual(result?[0] as? Bool, true)
+        XCTAssertEqual(result?[1] as? String, "- First museum\n    - Build another museum with a sufficiently long description to wrap across multiple lines and remain aligned")
+    }
     private func preference(_ key: String, _ value: Any) {
         let defaults = UserDefaults.standard
         let previous = defaults.object(forKey: key)
@@ -679,7 +799,7 @@ extension EditorBehaviorTests {
                 document.execCommand('insertText',false,letter);
                 const selection=getSelection(),last=document.createRange();
                 last.setStart(selection.anchorNode,selection.anchorOffset-1);last.setEnd(selection.anchorNode,selection.anchorOffset);
-                const glyph=last.getBoundingClientRect(),caret=indicator.getBoundingClientRect();
+                const glyph=[...last.getClientRects()].at(-1),caret=indicator.getBoundingClientRect();
                 const expected=glyph.right,expectedTop=glyph.top+(glyph.height-parseFloat(getComputedStyle(block).fontSize))/2;
                 samples.push({prefix,letter,expected,expectedTop,actual:caret.left,actualTop:caret.top,visible:!indicator.hidden});
               }
@@ -1106,7 +1226,7 @@ extension EditorBehaviorTests {
                 range.setStart(text,0);range.setEnd(text,1);return range.getBoundingClientRect().left;
               });
               return JSON.stringify({aligned:Math.max(...positions)-Math.min(...positions)<.1,
-                noLeadingGap:markers.every(marker=>parseFloat(getComputedStyle(marker).marginLeft)===0),
+                noLeadingGap:markers.slice(0,4).every(marker=>Math.abs(marker.getBoundingClientRect().left-document.querySelector('.text').getBoundingClientRect().left)<.1),
                 unchanged:source()===\(String(reflecting: original))});
             })()
             """) as? String
@@ -1186,7 +1306,7 @@ extension EditorBehaviorTests {
               const marker=markers[1],body=getComputedStyle(block),style=getComputedStyle(marker);
               const metric=value=>Math.round(parseFloat(value)*100)/100;
               return JSON.stringify({count:markers.length,marker:marker.textContent,
-                inset:metric(style.marginLeft),gap:metric(style.marginRight),size:metric(style.fontSize),
+                inset:metric(marker.getBoundingClientRect().left-block.getBoundingClientRect().left),gap:metric(style.marginRight),size:metric(style.fontSize),
                 bodySize:metric(body.fontSize),lineHeight:metric(body.lineHeight),
                 contentSize:metric(getComputedStyle(marker.nextSibling.parentElement).fontSize)});
             })()
@@ -1302,7 +1422,7 @@ extension EditorBehaviorTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root)
-        let original = "Links\n- [A title](http://127.0.0.1:1/review)"
+        let original = "Links\n- [A long museum title that scrolls within the title field while editing](http://127.0.0.1:1/" + String(repeating: "review/", count: 16) + ")"
         try store.save(Note(text: original, language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }

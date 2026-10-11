@@ -1,5 +1,13 @@
 # Luna release notes
 
+## 0.13.0 — 2026-10-11
+
+- Wrapped bullets and numbered items stay aligned with their text, including nested lists.
+- Select list content without highlighting its markers.
+- Format selected live text with a floating toolbar. Bold, italic, strikethrough, inline code, and links stay saved as Markdown.
+- Link fields stay open while you add or edit links, including long titles and URLs.
+- Saved links with literal backticks in their titles stay clickable after reopening a note.
+
 ## 0.12.1 — 2026-10-11
 
 - The footer keeps build IDs out of regular releases. Local development builds still display the ID for testing.

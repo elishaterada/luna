@@ -48,27 +48,7 @@ enum InlineLinks {
             let marker = value.trimmingCharacters(in: .whitespaces).prefix(3)
             if marker == "```" || marker == "~~~" { fenced.toggle() }
             if fenced || marker == "```" || marker == "~~~" { result += NoteEmbeds.escape(value) }
-            else {
-                var start = value.startIndex
-                for match in expression.matches(in: value, range: NSRange(value.startIndex..., in: value)) {
-                    guard let full = Range(match.range, in: value), let labelRange = Range(match.range(at: 1), in: value),
-                          let urlRange = Range(match.range(at: 2), in: value),
-                          let url = NoteEmbeds.webURL(String(value[urlRange])) else { continue }
-                    result += NoteEmbeds.escape(String(value[start..<full.lowerBound]))
-                    let label = String(value[labelRange]).replacingOccurrences(of: "\\]", with: "]")
-                        .replacingOccurrences(of: "\\\\", with: "\\")
-                    let escapedURL = NoteEmbeds.escape(url.absoluteString)
-                    if label == "Mention" {
-                        let host = NoteEmbeds.escape(url.host ?? url.absoluteString)
-                        result += "<a class=\"inline-link mention-link\" contenteditable=\"false\" data-url=\"\(escapedURL)\" href=\"\(escapedURL)\" aria-label=\"Mention: \(host)\"><img class=\"link-favicon\" alt=\"\" hidden><span class=\"mention-title\">\(host)</span><span class=\"mention-tooltip\"><strong>\(host)</strong><small>\(escapedURL)</small></span></a>"
-                        if full.upperBound == value.endIndex { result += "\u{200B}" }
-                    } else {
-                        result += "<a class=\"inline-link\" data-url=\"\(escapedURL)\" href=\"\(escapedURL)\">\(NoteEmbeds.escape(label == "URL" ? url.absoluteString : label))</a>"
-                    }
-                    start = full.upperBound
-                }
-                result += NoteEmbeds.escape(String(value[start...]))
-            }
+            else { result += InlineFormatting.html(value) }
             if index < lines.count - 1 { result += "\n" }
         }
         return result

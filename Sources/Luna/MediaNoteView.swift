@@ -134,6 +134,14 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     func selectAllNote() {
         Task { _ = try? await callAsyncJavaScript("selectAllNote()", in: nil, contentWorld: .page) }
     }
+    func formatSelection(_ command: String) {
+        Task { _ = try? await callAsyncJavaScript("""
+            const selection=getSelection();
+            if (!selection?.rangeCount || selection.isCollapsed) return false;
+            formatRange=selection.getRangeAt(0).cloneRange();
+            return applySelectionFormat(command);
+            """, arguments: ["command": command], in: nil, contentWorld: .page) }
+    }
     func focusEditor() {
         focusOnNextLoad = true
         guard readyPageID == pageID, !isLoading, focusTask == nil else { return }
@@ -263,6 +271,24 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     private static let listScript = #"""
     let formattingList = false;
     let listMarkerEdit = 0;
+    function layoutListRows(block) {
+      block.style.removeProperty('--list-indent-parent');
+      for(const row of [block,...block.querySelectorAll('div,p')]) {
+        row.style.removeProperty('--list-indent');
+        const marker=[...row.querySelectorAll('.list-marker')].find(marker=>marker.closest('div,p')===row);
+        if(!marker)continue;
+        const range=document.createRange();range.setStart(row,0);range.setEndBefore(marker);
+        // A range before the marker can include empty editing containers with
+        // full-width rectangles. Measure only portable leading whitespace.
+        const whitespace=range.toString().replace(/\u200B/g,'').match(/[ \t]*$/)[0];
+        const context=document.createElement('canvas').getContext('2d');context.font=getComputedStyle(block).font;
+        const space=context.measureText(' ').width,tab=space*parseFloat(getComputedStyle(block).tabSize||'8');
+        let indent=0;for(const character of whitespace)indent=character==='\t'?(Math.floor(indent/tab)+1)*tab:indent+space;
+        const width=(indent+parseFloat(getComputedStyle(block).fontSize)*1.5)+'px';
+        row.style.setProperty('--list-indent',width);
+        if(row===block)block.style.setProperty('--list-indent-parent',width);
+      }
+    }
     function markerHTML(marker,id='') {
       const bullet=/^[-*+•]$/.test(marker);
       return '<span class="list-marker'+(bullet?' bullet-marker':'')+'" data-prefix="'+marker+' "'+(id?' data-list-edit="'+id+'"':'')+'>'+(bullet?'•':marker)+'</span>\u200B';
@@ -322,7 +348,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       const rich=styled&&text.startsWith('\n');
       const anchor=getSelection().anchorNode;
       const row=(anchor?.nodeType===Node.ELEMENT_NODE?anchor:anchor?.parentElement)?.closest('div,p');
-      if(rich&&row?.closest('.text')&&!row.matches('.text')) {
+      if(rich&&row?.closest('.text')) {
         // A BR fragment escapes a native paragraph and creates two line boundaries.
         document.execCommand('insertParagraph');html=html.slice(4);
       }
@@ -388,6 +414,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       }
       visit(block);
       formattingList=wasFormatting;
+      layoutListRows(block);
     }
     function currentLine() {
       const selection=getSelection();
@@ -400,7 +427,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       restoreListSource(fragment);
       fragment.querySelectorAll('a.mention-link').forEach(link=>link.replaceWith(document.createTextNode(link.querySelector('.mention-title').textContent)));
       fragment.style.cssText='position:absolute;opacity:0;pointer-events:none;left:-10000px;';
-      document.body.append(fragment);const before=fragment.innerText.replace(/[\r\u200B]/g,'');fragment.remove();
+      const before=paragraphText(fragment).replace(/[\r\u200B]/g,'');
       const start=before.lastIndexOf('\n')+1;
       if((before.slice(0,start).match(/^\s*(```|~~~)/gm)||[]).length%2)return null;
       return {block, prefix:before.slice(start), start};
@@ -523,7 +550,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       if(!match[3].trim())replaceBefore(line.prefix.length,'');
       else {
         const marker=/^\d/.test(match[2])?(Number.parseInt(match[2])+1)+'.':/^[-*+•]$/.test(match[2])?match[2]:'☐';
-        // An explicit BR keeps the next marker beside the break, including after an atomic Mention.
+        // Each continued item needs its own paragraph for independent hanging indentation.
         const prefix=match[1]+marker+' ';
         formattingList=true;insertListText('\n'+prefix);formattingList=false;
       }
@@ -573,22 +600,55 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       }
       post('input');
     });
+    function paragraphText(root,placeholders=true) {
+      let result='',previousBlock=false,previousEmptyRow=false,hasPrevious=false;
+      for(const node of root.childNodes) {
+        const row=node.nodeType===Node.ELEMENT_NODE&&node.matches('div,p');
+        if(row) {
+          if(hasPrevious&&(previousEmptyRow||!result.endsWith('\n')))result+='\n';
+          const value=paragraphText(node,placeholders);result+=value;previousEmptyRow=!value;previousBlock=true;hasPrevious=true;
+        } else {
+          const value=node.nodeType===Node.TEXT_NODE?node.textContent.replace(/\u200B/g,''):
+            node.nodeName==='BR'?(placeholders&&node===root.lastChild?'':'\n'):paragraphText(node,placeholders);
+          if(!value)continue;
+          if(previousBlock&&!value.startsWith('\n')&&(previousEmptyRow||!result.endsWith('\n')))result+='\n';
+          result+=value;previousBlock=false;previousEmptyRow=false;hasPrevious=true;
+        }
+      }
+      return result;
+    }
     function textSource(block) {
-      if(!block.querySelector?.('a.inline-link,.list-marker,br'))return block.innerText.replace(/[\r\u200B]/g,'');
       const clone=block.cloneNode(true);
-      // WebKit leaves a final BR as an editing placeholder. It is not a saved blank line.
+      const editable=block.matches('[contenteditable="true"]');
+      // WebKit can leave two terminal BRs: one editing placeholder and one
+      // line terminator. Neither represents a new paragraph in saved source.
       let tail=clone.lastChild;
       while(tail?.nodeType===Node.ELEMENT_NODE&&tail.matches('div,p'))tail=tail.lastChild;
-      if(block.matches('[contenteditable="true"]')&&tail?.nodeType===Node.ELEMENT_NODE&&tail.matches('br'))tail.remove();
+      if(editable&&tail?.nodeName==='BR')tail.remove();
       restoreListSource(clone);
-      clone.querySelectorAll('a.inline-link').forEach(a=>{
-        const label=a.classList.contains('mention-link')?'Mention':
-          a.textContent===a.dataset.url?'URL':a.textContent.replaceAll('\\','\\\\').replaceAll(']','\\]');
-        const url=a.dataset.url.replaceAll('(','%28').replaceAll(')','%29');
-        a.replaceWith(document.createTextNode('['+label+']('+url+')'));
-      });
-      clone.style.cssText='position:absolute;opacity:0;pointer-events:none;left:-10000px;width:72ch;';
-      document.body.append(clone);const value=clone.innerText.replace(/[\r\u200B]/g,'');clone.remove();return value;
+      function restoreInlineSource(element) {
+        [...element.children].forEach(restoreInlineSource);
+        if(element.matches('a.inline-link')) {
+          const a=element;
+          const label=a.classList.contains('mention-link')?'Mention':
+            a.textContent===a.dataset.url?'URL':a.textContent.replaceAll('\\','\\\\').replaceAll(']','\\]');
+          const url=a.dataset.url.replaceAll('(','%28').replaceAll(')','%29');
+          a.replaceWith(document.createTextNode('['+label+']('+url+')'));
+        } else if(element.matches('b,strong,i,em,s,strike,del,code')||isInlineCode(element)) {
+          let marker=element.dataset.inlineDelimiter;
+          if(!marker)marker=element.matches('b,strong')?'**':element.matches('i,em')?'*':element.matches('s,strike,del')?'~~':'`';
+          const value=element.textContent.replace(/\u200B/g,'');
+          if(isInlineCode(element)) {
+            const longest=Math.max(0,...[...value.matchAll(/`+/g)].map(match=>match[0].length));
+            if(marker.length<=longest)marker='`'.repeat(longest+1);
+          }
+          const spaces=element.matches('b,strong,i,em')?value.match(/^(\s*)([\s\S]*?)(\s*)$/):['','','',''];
+          const content=element.matches('b,strong,i,em')?spaces[2]:value;
+          element.replaceWith(document.createTextNode(spaces[1]+(content?marker+content+marker:'')+spaces[3]));
+        }
+      }
+      restoreInlineSource(clone);
+      return paragraphText(clone,editable).replace(/[\r\u200B]/g,'');
     }
     function mentionIndexBefore(element,url) {
       return [...document.querySelectorAll('a.mention-link[data-url]')].filter(link=>
@@ -780,7 +840,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       }
       if(selection.isCollapsed||!selection.rangeCount)return;
       const fragment=selection.getRangeAt(0).cloneContents();
-      if(!fragment.querySelector('.list-marker'))return;
+      if(!fragment.querySelector('.list-marker,b,strong,i,em,s,strike,del,code,a.inline-link'))return;
       const block=document.createElement('div');block.className='text';block.append(fragment);
       e.clipboardData.setData('text/plain',textSource(block));e.preventDefault();
     });
@@ -802,7 +862,13 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       if(block) {
         block.focus({preventScroll:true});const range=document.createRange();range.selectNodeContents(block);
         selection.removeAllRanges();selection.addRange(range);
-        document.execCommand(value?'insertText':'delete',false,value);
+        if(value)document.execCommand('insertText',false,value);
+        else {
+          // Clearing from a marker otherwise carries its enlarged font and nowrap
+          // into new typing. Keep an ordinary body anchor in the same Undo edit.
+          const style=getComputedStyle(block);
+          document.execCommand('insertHTML',false,'<span style="font-size:'+style.fontSize+';font-weight:'+style.fontWeight+';white-space:pre-wrap;text-align:left">\u200B</span>');
+        }
       } else {
         const first=article.querySelector('.text');if(!first)return false;
         // A source-excluded anchor identifies the native text transaction without splitting typing's Undo group.
@@ -869,6 +935,174 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     });
     """#
 
+    private static let selectionScript = #"""
+    const formatMenu=document.getElementById('format-popover');
+    const selectionPaint=document.getElementById('selection-paint');
+    let formatRange=null,selectionDragging=false,formatDismissed=false,formatFrame=0,selectionWindowActive=true;
+    function isInlineCode(element){return !!element&&(element.matches('code')||element.style.fontFamily.includes('ui-monospace'));}
+    function containingInlineCode(node) {
+      let element=node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement;
+      while(element&&!element.matches('.text')){if(isInlineCode(element))return element;element=element.parentElement;}
+      return null;
+    }
+    function selectedBodyRanges(range) {
+      const ranges=[],walker=document.createTreeWalker(document.querySelector('article'),NodeFilter.SHOW_TEXT);
+      while(walker.nextNode()) {
+        const node=walker.currentNode;
+        if(!node.parentElement.closest('.text')||node.parentElement.closest('.list-marker,.mention-tooltip')||!range.intersectsNode(node))continue;
+        let start=node===range.startContainer?range.startOffset:0,end=node===range.endContainer?range.endOffset:node.length;
+        // Invisible typing anchors and literal indentation before a marker are
+        // editing structure, rather than selected item content.
+        if(node.nextSibling?.matches?.('.list-marker')&&!node.textContent.trim())continue;
+        while(start<end&&node.textContent[start]==='\u200B')start++;
+        while(end>start&&node.textContent[end-1]==='\u200B')end--;
+        if(start===end)continue;
+        const part=document.createRange();part.setStart(node,start);part.setEnd(node,end);ranges.push(part);
+      }
+      return ranges;
+    }
+    function hideFormatMenu(){formatMenu.classList.remove('open');formatMenu.replaceChildren();}
+    function formatButtons() {
+      formatMenu.innerHTML='<button data-format="bold" aria-label="Bold" title="Bold (⌘B)"><b>B</b></button><button data-format="italic" aria-label="Italic" title="Italic (⌘I)"><i>I</i></button><button data-format="strikeThrough" aria-label="Strikethrough" title="Strikethrough"><s>S</s></button><button data-format="code" aria-label="Inline code" title="Inline code (⌘⇧C)"><span class="code-symbol">&lt;/&gt;</span></button><span class="format-divider"></span><button data-format="link" aria-label="Add link" title="Add link (⌘K)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="m10 13 4-4M8 15l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 3 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" transform="translate(1 1)"/></svg></button>';
+      for(const button of formatMenu.querySelectorAll('[data-format]')) {
+        const command=button.dataset.format;
+        button.setAttribute('aria-pressed',String(command==='code'?!!containingInlineCode(getSelection().anchorNode):
+          ['bold','italic','strikeThrough'].includes(command)&&document.queryCommandState(command)));
+      }
+    }
+    function refreshSelectionUI() {
+      selectionPaint.replaceChildren();document.body.classList.remove('body-selection');
+      const selection=getSelection();
+      // Focusing a URL input collapses WebKit's document selection. Keep the
+      // saved editor range until the link form is submitted or dismissed.
+      const editingLink=!!formatMenu.querySelector('form');
+      const retainedRange=editingLink&&formatRange?.startContainer.isConnected&&formatRange.endContainer.isConnected;
+      if(!selectionWindowActive||document.body.classList.contains('composing')||(editingLink?!retainedRange:!selection?.rangeCount||selection.isCollapsed)){hideFormatMenu();formatRange=null;return;}
+      const range=editingLink?formatRange:selection.getRangeAt(0),parts=selectedBodyRanges(range);
+      if(!parts.length){hideFormatMenu();return;}
+      const focused=formatMenu.contains(document.activeElement);
+      document.body.classList.add('body-selection');
+      const rectangles=parts.flatMap(part=>[...part.getClientRects()]).filter(rect=>rect.width>0&&rect.height>0);
+      for(const rect of rectangles) {
+        const mark=document.createElement('span');mark.style.cssText=`left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;`;
+        selectionPaint.append(mark);
+      }
+      if(editingLink) {
+        const visible=rectangles.filter(rect=>rect.bottom>0&&rect.top<innerHeight);
+        if(!visible.length){hideFormatMenu();return;}
+        positionPopover(formatMenu,visible.at(-1));return;
+      }
+      if(focused)return;
+      const start=(range.startContainer.nodeType===Node.ELEMENT_NODE?range.startContainer:range.startContainer.parentElement)?.closest('.text');
+      const end=(range.endContainer.nodeType===Node.ELEMENT_NODE?range.endContainer:range.endContainer.parentElement)?.closest('.text');
+      if(selectionDragging||formatDismissed||!start||start!==end||!rectangles.length||activeLinkMenu.classList.contains('open')||activeSlashMenu.classList.contains('open')){hideFormatMenu();return;}
+      formatRange=range.cloneRange();formatButtons();
+      const visible=rectangles.filter(rect=>rect.bottom>0&&rect.top<innerHeight);
+      if(!visible.length){hideFormatMenu();return;}
+      const last=visible.at(-1);positionPopover(formatMenu,last);
+    }
+    function scheduleSelectionUI(){cancelAnimationFrame(formatFrame);formatFrame=requestAnimationFrame(refreshSelectionUI);}
+    function restoreFormatSelection() {
+      if(!formatRange?.startContainer.isConnected||!formatRange.endContainer.isConnected)return false;
+      const block=(formatRange.startContainer.nodeType===Node.ELEMENT_NODE?formatRange.startContainer:formatRange.startContainer.parentElement)?.closest('.text');
+      if(!block)return false;
+      const parts=selectedBodyRanges(formatRange);if(!parts.length)return false;
+      formatRange.setStart(parts[0].startContainer,parts[0].startOffset);
+      formatRange.setEnd(parts.at(-1).endContainer,parts.at(-1).endOffset);
+      block.focus({preventScroll:true});getSelection().removeAllRanges();getSelection().addRange(formatRange.cloneRange());return true;
+    }
+    function applySelectionFormat(command) {
+      if(!restoreFormatSelection())return false;
+      if(command==='code') {
+        const range=getSelection().getRangeAt(0),code=containingInlineCode(range.startContainer);
+        if(code&&code===containingInlineCode(range.endContainer)) {
+          const full=document.createRange();full.selectNode(code);getSelection().removeAllRanges();getSelection().addRange(full);
+          document.execCommand('insertHTML',false,code.innerHTML);
+        } else {
+          const clone=range.cloneContents();
+          // Code is an inline format: keep paragraph boundaries and markers.
+          const walker=document.createTreeWalker(clone,NodeFilter.SHOW_TEXT),nodes=[];
+          while(walker.nextNode())if(!walker.currentNode.parentElement?.closest('.list-marker,a'))nodes.push(walker.currentNode);
+          for(const node of nodes) {
+            const value=node.textContent;if(!value.replace(/[\s\u200B]/g,''))continue;
+            const code=document.createElement('code');code.textContent=value;node.replaceWith(code);
+          }
+          const container=document.createElement('div');container.append(clone);
+          document.execCommand('insertHTML',false,container.innerHTML);
+        }
+      } else {
+        // Native inline commands otherwise put later list prefixes inside bold
+        // wrappers. Treat only the marker as atomic for this editing transaction.
+        const markers=[...document.querySelectorAll('.list-marker')];
+        markers.forEach(marker=>marker.contentEditable='false');
+        document.execCommand('styleWithCSS',false,false);document.execCommand(command);
+        document.querySelectorAll('.list-marker').forEach(marker=>marker.removeAttribute('contenteditable'));
+      }
+      post('input');formatRange=getSelection().rangeCount?getSelection().getRangeAt(0).cloneRange():null;
+      scheduleSelectionUI();return true;
+    }
+    function showSelectionLink() {
+      formatMenu.innerHTML='<form><label for="selection-link-url">Link URL</label><input id="selection-link-url" type="text" inputmode="url" placeholder="https://example.com" required><div class="format-link-actions"><button type="button" data-format="cancel-link">Cancel</button><button type="submit">Save link</button></div></form>';
+      const input=formatMenu.querySelector('input');input.focus();
+      formatMenu.querySelector('form').addEventListener('submit',event=>{
+        event.preventDefault();const url=validLink(input.value.trim());
+        if(!url){input.setCustomValidity('Enter a valid http or https URL.');input.reportValidity();return;}
+        if(!restoreFormatSelection())return;
+        document.querySelectorAll('.list-marker').forEach(marker=>marker.contentEditable='false');
+        document.execCommand('createLink',false,url);
+        document.querySelectorAll('.list-marker').forEach(marker=>marker.removeAttribute('contenteditable'));
+        document.querySelectorAll('.text a:not(.inline-link)').forEach(link=>{link.classList.add('inline-link');link.dataset.url=link.href;});
+        post('inlineLink');hideFormatMenu();scheduleSelectionUI();
+      });
+      input.addEventListener('input',()=>input.setCustomValidity(''));
+      scheduleSelectionUI();
+    }
+    formatMenu.addEventListener('mousedown',event=>{if(event.target.closest('button'))event.preventDefault();});
+    formatMenu.addEventListener('click',event=>{
+      const command=event.target.closest('[data-format]')?.dataset.format;if(!command)return;
+      if(command==='link'){showSelectionLink();return;}
+      if(command==='cancel-link'){restoreFormatSelection();formatButtons();scheduleSelectionUI();return;}
+      applySelectionFormat(command);
+    });
+    document.addEventListener('selectionchange',()=>{
+      const range=getSelection().rangeCount?getSelection().getRangeAt(0):null;
+      if(!formatDismissed||!range||!formatRange||range.compareBoundaryPoints(Range.START_TO_START,formatRange)!==0||range.compareBoundaryPoints(Range.END_TO_END,formatRange)!==0)formatDismissed=false;
+      scheduleSelectionUI();
+    });
+    document.addEventListener('pointerdown',event=>{
+      if(formatMenu.contains(event.target))return;
+      selectionDragging=true;formatDismissed=false;hideFormatMenu();
+    });
+    document.addEventListener('pointerup',()=>{selectionDragging=false;scheduleSelectionUI();});
+    document.addEventListener('input',()=>{document.querySelectorAll('.list-marker').forEach(marker=>marker.removeAttribute('contenteditable'));scheduleSelectionUI();});
+    document.addEventListener('scroll',scheduleSelectionUI,true);window.addEventListener('resize',scheduleSelectionUI);
+    window.addEventListener('blur',()=>{selectionWindowActive=false;hideFormatMenu();selectionPaint.replaceChildren();document.body.classList.remove('body-selection');});
+    window.addEventListener('focus',()=>{selectionWindowActive=true;scheduleSelectionUI();});
+    document.addEventListener('compositionstart',()=>{hideFormatMenu();selectionPaint.replaceChildren();});
+    document.addEventListener('keydown',event=>{
+      if(event.key==='Escape'&&formatMenu.classList.contains('open')){event.preventDefault();formatDismissed=true;restoreFormatSelection();hideFormatMenu();return;}
+      // macOS can omit buttons from native Tab traversal. Keep all link-form
+      // controls reachable without changing the user's system preference.
+      if(event.key==='Tab'&&!event.metaKey&&!event.ctrlKey&&!event.altKey&&formatMenu.querySelector('form')&&formatMenu.contains(document.activeElement)) {
+        event.preventDefault();const controls=[...formatMenu.querySelectorAll('input,button')],index=controls.indexOf(document.activeElement);
+        controls[(index+(event.shiftKey?controls.length-1:1))%controls.length].focus();return;
+      }
+      if(event.altKey&&event.key==='F10'&&formatMenu.classList.contains('open')){event.preventDefault();formatMenu.querySelector('button')?.focus();return;}
+      if(formatMenu.contains(document.activeElement)&&document.activeElement.matches('button')&&['ArrowLeft','ArrowRight'].includes(event.key)) {
+        event.preventDefault();const buttons=[...formatMenu.querySelectorAll('button')],index=buttons.indexOf(document.activeElement);
+        buttons[(index+(event.key==='ArrowRight'?1:buttons.length-1))%buttons.length].focus();return;
+      }
+      if(formatMenu.contains(document.activeElement))return;
+      if(event.altKey||event.ctrlKey||!event.metaKey)return;
+      const key=event.key.toLowerCase(),command=key==='b'?'bold':key==='i'?'italic':key==='c'&&event.shiftKey?'code':key==='k'?'link':null;
+      const selection=getSelection();if(!command||!selection?.rangeCount||selection.isCollapsed)return;
+      const range=selection.getRangeAt(0),start=range.startContainer.parentElement?.closest('.text'),end=range.endContainer.parentElement?.closest('.text');
+      if(!start||start!==end)return;
+      event.preventDefault();formatRange=range.cloneRange();
+      if(command==='link'){refreshSelectionUI();showSelectionLink();}else applySelectionFormat(command);
+    });
+    """#
+
     static func page(_ note: Note, fontSize: CGFloat, dark: Bool, pageID: String) -> String {
         let escape = NoteEmbeds.escape
         let steadyCaret = Bundle.main.object(forInfoDictionaryKey: "LunaDevelopmentBuild") as? Bool == true
@@ -882,7 +1116,9 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
             """
         }
         func textBlock(_ text: String, spacer: Bool = false) -> String {
-            "<div class=\"text\" contenteditable=\"true\" spellcheck=\"false\" data-block data-spacer=\"\(spacer)\">\(InlineLinks.html(text))</div>"
+            let content = text.isEmpty ? "" : InlineLinks.html(text).components(separatedBy: "\n")
+                .map { "<div>\($0.isEmpty ? "<br>" : $0)</div>" }.joined()
+            return "<div class=\"text\" contenteditable=\"true\" spellcheck=\"false\" data-block data-spacer=\"\(spacer)\">\(content)</div>"
         }
         for (index, block) in blocks.enumerated() {
             if index == 0, case .text = block { } else if index == 0 { html += textBlock("", spacer: true) }
@@ -926,8 +1162,13 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         :root {color-scheme: \(dark ? "dark" : "light");}
         body {box-sizing:border-box;min-height:100vh;margin:0;padding:24px 40px 80px;color:\(dark ? "#cccccc" : "#242833");font:\(fontSize)px/1.8 -apple-system,BlinkMacSystemFont,sans-serif;}
         article {max-width:72ch;margin:0;} .text {white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.8em;outline:none;}
+        .text,.text div,.text p {text-align:left !important;}
         .text div,.text p {min-height:1.8em;margin:0;} .text div > br:last-child,.text p > br:last-child {display:none;}
-        .list-marker {display:inline-block;width:1.25em;margin-left:0;margin-right:.25em;text-align:right;font-variant-numeric:tabular-nums;}
+        .text,.text div,.text p {box-sizing:border-box;padding-left:var(--list-indent,0px);}
+        .text div,.text p {--list-indent:0px;}
+        .text > div,.text > p {margin-left:calc(-1 * var(--list-indent-parent,0px));}
+        .list-marker {display:inline-block;width:1.25em;margin-left:calc(-1 * var(--list-indent,0px));margin-right:.25em;text-align:right;white-space:nowrap;overflow-wrap:normal;font-variant-numeric:tabular-nums;}
+        .list-marker {font-weight:400;font-style:normal;text-decoration:none;user-select:none;-webkit-user-select:none;}
         .list-marker:empty {display:none;}
         .bullet-marker {--bullet-scale:1.45;font-size:calc(1em * var(--bullet-scale));width:calc(1.25em / var(--bullet-scale));margin-right:calc(.25em / var(--bullet-scale));line-height:0;text-align:center;}
         .text {caret-color:transparent;} body.composing .text {caret-color:auto;}
@@ -981,15 +1222,32 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         .remove::before,.remove::after {content:'';position:absolute;left:50%;top:50%;width:13px;height:2px;background:currentColor;border-radius:1px;pointer-events:none;transform:translate(-50%,-50%) rotate(45deg);}
         .remove::after {transform:translate(-50%,-50%) rotate(-45deg);}
         figure:hover .remove, .remove:focus-visible {opacity:1;} ::selection {background:#19f9d838;}
-        article.whole-note-selected > * {background-color:#19f9d838;}
-        </style></head><body><article>\(html)</article><div id="text-caret" hidden aria-hidden="true"></div><div id="caret-guide" hidden aria-hidden="true"></div><div id="caret-readout" hidden aria-hidden="true"></div><div id="link-popover" class="editor-popover" role="dialog" aria-label="Link options"></div><div id="slash-popover" class="editor-popover" role="listbox" aria-label="Insert block"></div>
+        article.whole-note-selected > figure {background-color:#19f9d838;}
+        body.body-selection article ::selection {background:transparent;}
+        #selection-paint {position:fixed;inset:0;pointer-events:none;z-index:0;}
+        #selection-paint span {position:fixed;background:#19f9d838;}
+        article {position:relative;z-index:1;}
+        .text code {font-family:ui-monospace,SFMono-Regular,monospace;font-size:.88em;background:#8882;border-radius:3px;padding:1px 3px;}
+        #format-popover {min-width:0;width:max-content;padding:4px;user-select:none;}
+        #format-popover.open {display:flex;align-items:center;gap:2px;}
+        #format-popover button {display:flex;justify-content:center;align-items:center;width:34px;height:34px;padding:0;text-align:center;}
+        #format-popover button[aria-pressed=true] {background:#19f9d825;color:\(dark ? "#19f9d8" : "#087769");}
+        #format-popover button:focus-visible {outline:2px solid \(dark ? "#19f9d8" : "#087769");outline-offset:-2px;}
+        #format-popover .code-symbol {font:12px ui-monospace,SFMono-Regular,monospace;}
+        .format-divider {height:20px;width:1px;background:#8884;margin:0 3px;}
+        #format-popover form {width:min(250px,calc(100vw - 40px));padding:5px;}
+        #format-popover label {display:block;padding:2px 0 4px;}
+        #format-popover .format-link-actions {display:flex;justify-content:flex-end;gap:4px;}
+        #format-popover .format-link-actions button {width:auto;padding:0 9px;}
+        </style></head><body><article>\(html)</article><div id="selection-paint" aria-hidden="true"></div><div id="format-popover" class="editor-popover" role="toolbar" aria-label="Format selection"></div><div id="text-caret" hidden aria-hidden="true"></div><div id="caret-guide" hidden aria-hidden="true"></div><div id="caret-readout" hidden aria-hidden="true"></div><div id="link-popover" class="editor-popover" role="dialog" aria-label="Link options"></div><div id="slash-popover" class="editor-popover" role="listbox" aria-label="Insert block"></div>
         <script nonce="\(pageID)">
         const page = '\(pageID)';
         const liveTabWidth=\(EditorPreferences.tabWidth),liveIndent='\(EditorPreferences.useTabs ? "\\t" : String(repeating: " ", count: EditorPreferences.tabWidth))';
         function source() {return [...document.querySelectorAll('[data-block]')].filter(e=>e.dataset.spacer!=='true'||e.innerText!=='').map(e=>e.dataset.source ?? textSource(e)).join('\\n');}
-        function post(kind, extra={}) {window.webkit.messageHandlers.note.postMessage({page,kind,source:source(),...extra});}
+        function post(kind, extra={}) {document.querySelectorAll('.text').forEach(layoutListRows);window.webkit.messageHandlers.note.postMessage({page,kind,source:source(),...extra});}
         \(listScript)
         \(editorScript)
+        \(selectionScript)
         document.querySelectorAll('.text').forEach(block=>decorateListMarkers(block));
         let caretDebug=false,caretFrame=0,caretWindowActive=true;
         function updateTextCaret() {
@@ -1001,7 +1259,8 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
           if(document.querySelector('.editor-popover.open'))return;
           const range=selection.getRangeAt(0).cloneRange();
           if(node.nodeType===Node.ELEMENT_NODE) {
-            const before=node.childNodes[selection.anchorOffset-1];
+            let before=node.childNodes[selection.anchorOffset-1];
+            while(before?.nodeType===Node.ELEMENT_NODE&&before.matches('div,p'))before=before.lastChild;
             if(before?.nodeType===Node.TEXT_NODE){range.setStart(before,before.textContent.length);range.collapse(true);}
           }
           // WebKit may split a glyph's advance between the visible letter and a
@@ -1101,8 +1360,10 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
           e.preventDefault();adjacent.remove();mergeAdjacentText(block,backwards);post('removeLink');
         });
         document.addEventListener('mousedown',event=>{
-          if(event.button===0 && event.target.matches('.text')){
-            const block=event.target,link=block.lastElementChild;
+          if(event.button===0 && event.target.matches('.text,.text div,.text p')){
+            const block=event.target.closest('.text');let row=event.target===block?block.lastElementChild:event.target;
+            if(!row?.matches('div,p'))row=block;
+            const link=row.lastElementChild;
             const rect=link?.getBoundingClientRect();
             if(link?.matches('a.mention-link') && link.nextSibling?.textContent==='\\u200B' &&
                event.clientX>=rect.right && event.clientY>=rect.top-4 && event.clientY<=rect.bottom+4){
@@ -1129,7 +1390,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
           const selected=(selection.anchorNode?.nodeType===Node.ELEMENT_NODE?selection.anchorNode:selection.anchorNode?.parentElement)?.closest('.text');
           if(selected){selected.focus({preventScroll:true});return true;}
           block.focus({preventScroll:true});
-          const range=document.createRange();range.selectNodeContents(block);range.collapse(true);
+          const range=document.createRange();range.selectNodeContents(block.firstElementChild?.matches('div,p')?block.firstElementChild:block);range.collapse(true);
           selection.removeAllRanges();selection.addRange(range);normalizeListCaret();return true;
         }
         function replayPendingInput(input) {
@@ -1147,7 +1408,12 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
           insertListText(snippet);post('structure');
         }
         document.addEventListener('paste',e=>{if(!e.target.closest('.text'))return;const text=e.clipboardData.getData('text/plain');e.preventDefault();const whole=wholeNoteSelectionText!==null;if(whole&&!/^(https?:\\/\\/\\S+)$/.test(text.trim())&&!/<iframe/i.test(text)&&replaceWholeNote(text))return;replaceWholeNote('');if(/^(https?:\\/\\/\\S+)$/.test(text.trim())||/<iframe/i.test(text)){window.webkit.messageHandlers.note.postMessage({page,kind:'paste',value:text});}else{insertListText(text);post('input');}});
-        document.addEventListener('scroll',()=>{hideLinkMenu();activeSlashMenu.classList.remove('open');document.querySelectorAll('.link-style[open]').forEach(positionBlockStyleMenu);},true);
+        document.addEventListener('scroll',event=>{
+          // Long title/URL inputs scroll horizontally when focused or typed in.
+          // Those internal scrolls do not move the note or its anchored menu.
+          if(activeLinkMenu.contains(event.target))return;
+          hideLinkMenu();activeSlashMenu.classList.remove('open');document.querySelectorAll('.link-style[open]').forEach(positionBlockStyleMenu);
+        },true);
         window.addEventListener('resize',()=>document.querySelectorAll('.link-style[open]').forEach(positionBlockStyleMenu));
         function openStyleMenu(url) {const links=[...document.querySelectorAll('a.inline-link[data-url]')].filter(e=>e.dataset.url===url);if(links.length){showLinkMenu(links[links.length-1],true);return;}const figures=[...document.querySelectorAll('figure.linked-text[data-url]')].filter(e=>e.dataset.url===url);const figure=figures[figures.length-1];figure?.classList.remove('style-dismissed');figure?.querySelector('.link-style')?.setAttribute('open','');}
         function dismissStyleMenu(url) {const figures=[...document.querySelectorAll('figure.linked-text[data-url]')].filter(e=>e.dataset.url===url);figures[figures.length-1]?.classList.add('style-dismissed');}
