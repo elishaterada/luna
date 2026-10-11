@@ -402,12 +402,13 @@ final class NoteEmbedsTests: XCTestCase {
             if (try? await view.evaluateJavaScript("document.querySelector('.mention-link') !== null && document.querySelector('figure.bookmark') !== null")) as? Bool == true { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        _ = try await view.callAsyncJavaScript("resolveLinkMetadata(url,title,description,favicon,image);document.querySelector('.bookmark-preview').dispatchEvent(new Event('load'))", arguments: [
-            "url": "https://example.com/page", "title": "Page title", "description": "A useful page description",
-            "favicon": "https://example.com/icon.png", "image": "https://example.com/cover.jpg"
-        ], in: nil, contentWorld: .page)
-        let details = try await view.evaluateJavaScript("""
-            JSON.stringify({mention:document.querySelector('.mention-title').textContent,
+        // Keep fixture application and capture in one JavaScript turn: live metadata
+        // responses and image events must not overwrite the fixture between awaits.
+        let result = try await view.callAsyncJavaScript("""
+            resolveLinkMetadata(url,title,description,favicon,image);
+            const preview=document.querySelector('.bookmark-preview');
+            preview.dispatchEvent(new Event('load'));
+            const details=JSON.stringify({mention:document.querySelector('.mention-title').textContent,
               mentionDescription:document.querySelector('.mention-tooltip small').textContent,
               bookmark:document.querySelector('.bookmark-title').textContent,
               bookmarkDescription:document.querySelector('.bookmark-description').textContent,
@@ -416,10 +417,19 @@ final class NoteEmbedsTests: XCTestCase {
               imageVisible:!document.querySelector('.bookmark-preview').hidden,
               imageLayout:document.querySelector('figure.bookmark').classList.contains('has-preview-image'),
               bookmarkURL:document.querySelector('.bookmark-host').textContent,
-              source:source()})
-            """) as? String
+              source:source()});
+            preview.dispatchEvent(new Event('error'));
+            const fallback=JSON.stringify({imageVisible:!preview.hidden,
+              imageLayout:document.querySelector('figure.bookmark').classList.contains('has-preview-image'),
+              host:document.querySelector('.bookmark-host').textContent});
+            return {details,fallback};
+            """, arguments: [
+                "url": "https://example.com/page", "title": "Page title", "description": "A useful page description",
+                "favicon": "https://example.com/icon.png", "image": "https://example.com/cover.jpg"
+            ], in: nil, contentWorld: .page) as? [String: String]
+        let details = result?["details"]
         XCTAssertEqual(details, "{\"mention\":\"Page title\",\"mentionDescription\":\"A useful page description\",\"bookmark\":\"Page title\",\"bookmarkDescription\":\"A useful page description\",\"icons\":[\"https://example.com/icon.png\",\"https://example.com/icon.png\"],\"image\":\"https://example.com/cover.jpg\",\"imageVisible\":true,\"imageLayout\":true,\"bookmarkURL\":\"https://example.com/page\",\"source\":\"\(source.replacingOccurrences(of: "\n", with: "\\n"))\"}")
-        let fallback = try await view.evaluateJavaScript("document.querySelector('.bookmark-preview').dispatchEvent(new Event('error'));JSON.stringify({imageVisible:!document.querySelector('.bookmark-preview').hidden,imageLayout:document.querySelector('figure.bookmark').classList.contains('has-preview-image'),host:document.querySelector('.bookmark-host').textContent})") as? String
+        let fallback = result?["fallback"]
         XCTAssertEqual(fallback, "{\"imageVisible\":false,\"imageLayout\":false,\"host\":\"example.com\"}")
         XCTAssertEqual(workspace.editor.string, source)
     }
