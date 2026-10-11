@@ -207,33 +207,44 @@ extension EditorBehaviorTests {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let workspace = Workspace(store: try RecoveryStore(directory: root), skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        let store = try RecoveryStore(directory: root)
+        let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
         let view = workspace.mediaView
-        for _ in 0..<100 {
-            if (try? await view.evaluateJavaScript("typeof currentLine")) as? String == "function" { break }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
         for prefix in ["- ", "* ", "+ ", "• ", "1. ", "☐ ", "☑ "] {
-            let result = try await view.callAsyncJavaScript("""
-                const block=document.querySelector('.text');block.textContent=prefix+'a';decorateListMarkers(block);block.focus();
-                const text=block.querySelector('.list-marker').nextSibling,range=document.createRange();
-                range.setStart(text,text.textContent.length);range.collapse(true);
-                getSelection().removeAllRanges();getSelection().addRange(range);
-                function backspace() {
-                  const event=new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true});
-                  document.dispatchEvent(event);if(!event.defaultPrevented)document.execCommand('delete');
+            for body in ["a", ""] {
+                // A new page gives each scenario its own native Undo history.
+                // WebKit can coalesce consecutive deletes differently across OS versions.
+                view.show(Note(text: prefix + body, language: "Markdown"), store: store,
+                          fontSize: 18, appearance: NSAppearance(named: .darkAqua)!)
+                for _ in 0..<100 {
+                    if !view.isLoading,
+                       (try? await view.evaluateJavaScript("document.querySelector('.list-marker')?.nextSibling?.textContent")) as? String == "\u{200B}" + body { break }
+                    try await Task.sleep(nanoseconds: 50_000_000)
                 }
-                backspace();const empty=source();backspace();const exited=source();
-                document.execCommand('undo');const restored=source();
-                document.execCommand('redo');const redone=source();
-                document.execCommand('undo');const restoredAgain=source();
-                document.execCommand('insertText',false,'t');
-                const normal=getComputedStyle(getSelection().anchorNode.parentElement).fontSize===getComputedStyle(block).fontSize;
-                return [empty,exited,restored,redone,restoredAgain,source(),String(normal)];
-                """, arguments: ["prefix": prefix], in: nil, contentWorld: .page) as? [String]
-            XCTAssertEqual(result, [prefix, "", prefix, "", prefix, prefix + "t", "true"], "Deleting the last letter and undoing the prefix removal must keep \(prefix) ready for normal body typing")
+                let result = try await view.callAsyncJavaScript("""
+                    const block=document.querySelector('.text');block.focus();
+                    const text=block.querySelector('.list-marker').nextSibling,range=document.createRange();
+                    range.setStart(text,text.textContent.length);range.collapse(true);
+                    getSelection().removeAllRanges();getSelection().addRange(range);
+                    function backspace() {
+                      const event=new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true});
+                      document.dispatchEvent(event);if(!event.defaultPrevented)document.execCommand('delete');
+                    }
+                    backspace();
+                    if(body)return [source()];
+                    const exited=source();
+                    document.execCommand('undo');const restored=source();
+                    document.execCommand('redo');const redone=source();
+                    document.execCommand('undo');const restoredAgain=source();
+                    document.execCommand('insertText',false,'t');
+                    const normal=getComputedStyle(getSelection().anchorNode.parentElement).fontSize===getComputedStyle(block).fontSize;
+                    return [exited,restored,redone,restoredAgain,source(),String(normal)];
+                    """, arguments: ["body": body], in: nil, contentWorld: .page) as? [String]
+                let expected = body.isEmpty ? ["", prefix, "", prefix, prefix + "t", "true"] : [prefix]
+                XCTAssertEqual(result, expected, "Deleting a body letter preserves \(prefix); undoing its removal permits normal body typing")
+            }
         }
     }
     @MainActor func testBackspaceAfterRemovingListPrefixJoinsLineImmediately() async throws {
