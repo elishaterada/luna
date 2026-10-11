@@ -10,4 +10,4 @@ When shipping, follow [docs/releasing.md](docs/releasing.md). Keep user-facing r
 
 After every update, build and open the updated Luna app for the user to review before reporting completion. Preserve existing notes when relaunching, and confirm that the opened app is the build from the current worktree.
 
-For every user-testing handoff, report the expected build ID shown in the app's footer. Confirm that it matches the opened bundle's `CFBundleVersion`, and identify any older Luna copies still running.
+For every user-testing handoff, report the opened bundle's `CFBundleVersion` and identify any older Luna copies still running. Local development builds (`LUNA_DEVELOPMENT_BUILD=1`) display that ID in the footer; confirm it matches. Regular releases must not show the build ID in the footer.

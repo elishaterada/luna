@@ -64,7 +64,6 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     let notePath = NotePathView()
     let subtitle = Theme.label("Private note · kept on this Mac", size: 11)
     let status = Theme.label("All notes stay with you", size: 11)
-    let buildLabel = Theme.label("Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development")", size: 10)
     let updated = Theme.label("", size: 11)
     let position = Theme.label("Ln 1, Col 1", size: 11)
     let language = NSPopUpButton()
@@ -231,10 +230,14 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         sizeLabel.alignment = .center
         sizeLabel.widthAnchor.constraint(equalToConstant: 36).isActive = true
         let textSizeControls = NSStackView(views: [smallerButton, sizeLabel, largerButton]); textSizeControls.spacing = 0
-        let statusStack = NSStackView(views: [status, buildLabel]); statusStack.orientation = .vertical
+        let statusStack = NSStackView(views: [status]); statusStack.orientation = .vertical
         statusStack.alignment = .leading; statusStack.spacing = 2
-        buildLabel.setAccessibilityLabel(buildLabel.stringValue)
-        buildLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        if Bundle.main.object(forInfoDictionaryKey: "LunaDevelopmentBuild") as? Bool == true {
+            let buildLabel = Theme.label("Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development")", size: 10)
+            buildLabel.setAccessibilityLabel(buildLabel.stringValue)
+            buildLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+            statusStack.addArrangedSubview(buildLabel)
+        }
         let footer = NSStackView(views: [statusStack, NSView(), position, language, textSizeControls]); footer.spacing = 12
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         position.setContentCompressionResistancePriority(.required, for: .horizontal)

@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.12.1 — 2026-10-11
+
+- The footer keeps build IDs out of regular releases. Local development builds still display the ID for testing.
+
 ## 0.12.0 — 2026-10-11
 
 - New notes open in Markdown Live View for lightweight formatted writing. Plain Text and Markdown Source display literal text.

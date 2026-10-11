@@ -2,6 +2,18 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-10-11 — Follow-up correction: build IDs only in local development
+
+**Request:** Keep the build ID out of regular releases and display it only in local development builds. This supersedes the always-visible footer introduced during the preceding editor work and shipped in 0.12.0.
+
+**Implementation:** The footer creates and attaches the build label only when the bundle's `LunaDevelopmentBuild` boolean is true. Production bundles have no label, accessibility text, or reserved second status row. The existing `LUNA_DEVELOPMENT_BUILD=1` build-script option enables the label alongside editor diagnostics. Building production recopies the clean Info.plist, removing any previous development flag. Updated the agent handoff rule and editor debugging guide to identify production builds through bundle metadata. Version 0.12.1 is a new patch; the published 0.12.0 release and signed artifacts remain intact.
+
+**Files:** `Sources/Luna/Workspace.swift`, `Resources/Info.plist`, `CHANGELOG.md`, `AGENTS.md`, `docs/editor-debugging.md`, `docs/llm-changelog.md`.
+
+**Verification:** All 134 Swift tests and four release-tool tests passed. Release-note/version-order checks and `git diff --check` passed. Built and opened both configurations from the current worktree. Development build **20261011151618** showed the matching footer/CFBundleVersion, with the development flag true. Production build **20261011151639** omitted the ID from both the footer screenshot and accessibility tree; its development flag is absent. Both bundles passed strict nested signature verification and their executable UUID matches `.build/release/Luna` (**8337F339-A90F-3D75-B5F4-C0BDBCC73D18**). Only the current worktree copy is running. All three latest user-note text/language fingerprints remain unchanged across relaunches.
+
+**Release status / limitations:** Local verification complete; 0.12.1 publication and installed-update verification pending. This is a footer visibility correction; build metadata remains available for support and update ordering.
+
 ## 2026-10-11 — Luna 0.12.0 release and retained editor debugging lessons
 
 **Request:** Ship the user-approved editor improvements and preserve all lessons and debugging techniques for future work.

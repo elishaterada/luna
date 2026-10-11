@@ -4,7 +4,7 @@ Use this guide for caret, list, selection, focus, and undo bugs. The dated evide
 
 ## Establish the actual editing surface
 
-1. Read the screenshot's footer build ID. Compare it with the opened bundle's `CFBundleVersion`, executable path, and executable UUID from the current worktree. Enumerate running Luna copies; an installed copy can coexist with `dist/Luna.app` despite sharing a bundle identifier.
+1. Identify the opened bundle's `CFBundleVersion`, executable path, and executable UUID from the current worktree. Local development builds (`LUNA_DEVELOPMENT_BUILD=1`) show that ID in the footer; compare it with the screenshot. Regular releases omit the footer ID, so read their bundle metadata instead. Enumerate running Luna copies; an installed copy can coexist with `dist/Luna.app` despite sharing a bundle identifier.
 2. Identify the note language and surface. New private notes default to Markdown Live View. Plain Text and Markdown Source are literal native text editors. File-backed notes and oversized prose can use different paths. Test the surface the user actually used.
 3. Preserve the latest recovery records before relaunching. Use a private backup and compare note IDs plus text/language fingerprints afterward. Create disposable notes for destructive keyboard tests; remove only those notes after verification. Keep backups until preservation is confirmed.
 
