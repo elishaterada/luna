@@ -17,6 +17,7 @@ final class MarkdownEditingTests: XCTestCase {
         let workspace = try workspace()
         let note = Note(text: "Hello 🌙", language: "Markdown")
         workspace.notes.append(note); workspace.select(note.id, focusContent: true)
+        workspace.toggleMarkdownPreview()
         let editor = workspace.editor
         editor.setSelectedRange(NSRange(location: 6, length: 2))
         let menu = NSMenu()
@@ -76,7 +77,7 @@ final class MarkdownEditingTests: XCTestCase {
         workspace.toggleSplitPreview()
         workspace.toggleMarkdownPreview()
         XCTAssertFalse(workspace.splitPreviewing)
-        XCTAssertTrue(workspace.previewing)
+        XCTAssertTrue(workspace.richEditing, "Private Markdown returns to live editing after Source and Preview")
         XCTAssertTrue(workspace.scroll.isHidden)
         let plain = Note(text: "Plain", language: "Plain Text")
         workspace.notes.append(plain); workspace.select(plain.id, focusContent: true)

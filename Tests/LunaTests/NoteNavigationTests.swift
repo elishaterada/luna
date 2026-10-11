@@ -206,14 +206,14 @@ final class NoteNavigationTests: XCTestCase {
         XCTAssertEqual(workspace.editor.string, "")
         XCTAssertEqual(try store.load().map(\.id), workspace.notes.map(\.id))
     }
-    @MainActor func testArrowNavigationKeepsListFocusUntilRightArrow() throws {
+    @MainActor func testArrowNavigationKeepsListFocusUntilRightArrow() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
                                   skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
-        workspace.notes = [Note(text: "First\nline"), Note(text: "Second\nline"), Note(text: "Third\nline")]
+        workspace.notes = [Note(text: "First\nline", language: "Shell"), Note(text: "Second\nline", language: "Shell"), Note(text: "Third\nline", language: "Shell")]
         workspace.reloadShelf(); workspace.select(workspace.notes[0].id)
         let window = try XCTUnwrap(workspace.window)
         workspace.showWindow(nil)
@@ -251,6 +251,12 @@ final class NoteNavigationTests: XCTestCase {
         workspace.toggleSidebar()
         XCTAssertTrue(window.firstResponder === workspace.editor)
         workspace.newNote()
-        XCTAssertTrue(window.firstResponder === workspace.editor)
+        XCTAssertTrue(workspace.richEditing)
+        for _ in 0..<100 {
+            if (try? await workspace.mediaView.evaluateJavaScript("document.activeElement?.matches('.text')")) as? Bool == true { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let focused = (try? await workspace.mediaView.evaluateJavaScript("document.activeElement?.matches('.text')")) as? Bool
+        XCTAssertEqual(focused, true)
     }
 }

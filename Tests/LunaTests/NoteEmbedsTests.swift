@@ -29,7 +29,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "[URL](https://example.com)"))
+        try store.save(Note(text: "[URL](https://example.com)", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -52,7 +52,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "Before [URL](https://example.com) After"))
+        try store.save(Note(text: "Before [URL](https://example.com) After", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -129,7 +129,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "[URL](https://example.com/path)"))
+        try store.save(Note(text: "[URL](https://example.com/path)", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -155,7 +155,7 @@ final class NoteEmbedsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
         let url = "http://127.0.0.1:1/mention-caret"
-        try store.save(Note(text: "[Mention](\(url))\n[URL](\(url))"))
+        try store.save(Note(text: "[Mention](\(url))\n[URL](\(url))", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -167,7 +167,7 @@ final class NoteEmbedsTests: XCTestCase {
         _ = try await view.evaluateJavaScript("showLinkMenu(document.querySelectorAll('a.inline-link')[1],true);document.querySelector('[data-link-action=mention]').click();true")
         var caretRestored = false
         for _ in 0..<100 {
-            caretRestored = (try? await view.evaluateJavaScript("document.querySelectorAll('a.mention-link').length===2 && getSelection().anchorNode===document.querySelectorAll('a.mention-link')[1].nextSibling && getSelection().anchorOffset===0 && document.activeElement===document.querySelector('.text')")) as? Bool == true
+            caretRestored = (try? await view.evaluateJavaScript("document.querySelectorAll('a.mention-link').length===2 && getSelection().anchorNode===document.querySelectorAll('a.mention-link')[1].nextSibling && getSelection().anchorOffset===1 && document.activeElement===document.querySelector('.text')")) as? Bool == true
             if caretRestored { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -175,9 +175,10 @@ final class NoteEmbedsTests: XCTestCase {
         let state = try await view.evaluateJavaScript("""
             (()=>{
               const block=document.querySelector('.text'),link=document.querySelectorAll('a.mention-link')[1];
-              const rect=link.getBoundingClientRect();
+              const rect=link.getBoundingClientRect(),start=document.createRange();start.selectNodeContents(block);start.collapse(true);
+              getSelection().removeAllRanges();getSelection().addRange(start);
               block.dispatchEvent(new MouseEvent('mousedown',{button:0,clientX:rect.right+8,clientY:rect.top+rect.height/2,bubbles:true,cancelable:true}));
-              const afterClick=getSelection().anchorNode===link.nextSibling && getSelection().anchorOffset===0;
+              const afterClick=getSelection().anchorNode===link.nextSibling && getSelection().anchorOffset===1;
               document.execCommand('insertText',false,' continued');
               return JSON.stringify({afterClick,source:source(),active:document.activeElement===block});
             })()
@@ -194,7 +195,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "[URL](http://127.0.0.1:1/keyboard-link)"))
+        try store.save(Note(text: "[URL](http://127.0.0.1:1/keyboard-link)", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -225,7 +226,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "[Bookmark](http://127.0.0.1:1/keyboard-bookmark)"))
+        try store.save(Note(text: "[Bookmark](http://127.0.0.1:1/keyboard-bookmark)", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -257,7 +258,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "[Bookmark](http://127.0.0.1:1/bottom-menu)"))
+        try store.save(Note(text: "[Bookmark](http://127.0.0.1:1/bottom-menu)", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -286,7 +287,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "Before [URL](https://example.com)"))
+        try store.save(Note(text: "Before [URL](https://example.com)", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -321,7 +322,7 @@ final class NoteEmbedsTests: XCTestCase {
         XCTAssertTrue(workspace.editor.string.contains("[Mention](https://example.org/bookmark)"))
         var caretAfterMention = false
         for _ in 0..<100 {
-            caretAfterMention = (try? await view.evaluateJavaScript("(()=>{const link=document.querySelector('a.mention-link[data-url=\"https://example.org/bookmark\"]');return !!link && getSelection().anchorNode===link.nextSibling && getSelection().anchorOffset===0;})()")) as? Bool == true
+            caretAfterMention = (try? await view.evaluateJavaScript("(()=>{const link=document.querySelector('a.mention-link[data-url=\"https://example.org/bookmark\"]');return !!link && getSelection().anchorNode===link.nextSibling && getSelection().anchorOffset===1;})()")) as? Bool == true
             if caretAfterMention { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -332,7 +333,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "First\n[Preview](http://127.0.0.1:1/select-all)\nLast"))
+        try store.save(Note(text: "First\n[Preview](http://127.0.0.1:1/select-all)\nLast", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -359,7 +360,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "First\n[Bookmark](http://127.0.0.1:1/menu-select-all)\nLast"))
+        try store.save(Note(text: "First\n[Bookmark](http://127.0.0.1:1/menu-select-all)\nLast", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -392,7 +393,7 @@ final class NoteEmbedsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
         let source = "Before [Mention](https://example.com/page)\n[Bookmark](https://example.com/page)\nAfter"
-        try store.save(Note(text: source))
+        try store.save(Note(text: source, language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -427,7 +428,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "Before [URL](https://example.com/a) middle [URL](https://example.com/b) after"))
+        try store.save(Note(text: "Before [URL](https://example.com/a) middle [URL](https://example.com/b) after", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -458,7 +459,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "First\n[Preview](http://127.0.0.1:1/empty-editor-test)\nLast"))
+        try store.save(Note(text: "First\n[Preview](http://127.0.0.1:1/empty-editor-test)\nLast", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -492,7 +493,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "First\n[Preview](http://127.0.0.1:1/forward-delete-test)\nLast"))
+        try store.save(Note(text: "First\n[Preview](http://127.0.0.1:1/forward-delete-test)\nLast", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -519,7 +520,7 @@ final class NoteEmbedsTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        try store.save(Note(text: "[URL](https://example.com)\n"))
+        try store.save(Note(text: "[URL](https://example.com)\n", language: "Markdown"))
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
@@ -546,6 +547,7 @@ final class NoteEmbedsTests: XCTestCase {
         let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
             skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
+        workspace.toggleMarkdownPreview()
         let file = try XCTUnwrap(Bundle.module.url(forResource: "skin", withExtension: "mp4", subdirectory: "Fixtures"))
         workspace.editor.insertText("Before After", replacementRange: NSRange(location: 0, length: 0))
         workspace.importMedia([file], range: NSRange(location: 7, length: 0))
@@ -568,6 +570,29 @@ final class NoteEmbedsTests: XCTestCase {
         XCTAssertTrue(workspace.flushRecovery())
         XCTAssertEqual(try workspace.store.load().first?.text, workspace.editor.string)
     }
+    @MainActor func testNewLiveNoteCanImportMediaWhileLoading() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
+            skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
+        defer { workspace.close() }
+        workspace.showWindow(nil); workspace.newNote()
+        XCTAssertTrue(workspace.richEditing)
+        let file = try XCTUnwrap(Bundle.module.url(forResource: "skin", withExtension: "mp4", subdirectory: "Fixtures"))
+        workspace.importMedia([file])
+        for _ in 0..<100 {
+            if ((try? await workspace.mediaView.evaluateJavaScript("document.querySelectorAll('video').length")) as? Int) == 1 { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let rendered = (try? await workspace.mediaView.evaluateJavaScript("document.querySelectorAll('video').length")) as? Int
+        XCTAssertEqual(rendered, 1)
+        let note = try XCTUnwrap(workspace.notes.first(where: { $0.id == workspace.selectedID }))
+        XCTAssertEqual(note.media.count, 1)
+        XCTAssertTrue(note.text.contains(try XCTUnwrap(note.media.first).reference))
+        XCTAssertTrue(workspace.flushRecovery())
+        XCTAssertEqual(try workspace.store.load().first(where: { $0.id == note.id })?.text, note.text)
+    }
     @MainActor func testLiveViewEditsRoundTripAndMediaActuallyLoads() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -575,7 +600,7 @@ final class NoteEmbedsTests: XCTestCase {
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
         let file = root.appendingPathComponent("pixel.png")
         try Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=")!.write(to: file)
-        var note = Note(text: "Before\n")
+        var note = Note(text: "Before\n", language: "Markdown")
         let video = try XCTUnwrap(Bundle.module.url(forResource: "skin", withExtension: "mp4", subdirectory: "Fixtures"))
         note.attachments = try store.importMedia([file, video], noteID: note.id)
         note.text += "![pixel](\(note.media[0].reference))\n![video](\(note.media[1].reference))\nAfter"

@@ -9,7 +9,7 @@ final class BlankEditorClickTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
-        let note = Note(text: "First\n[Example](https://example.com)\nLast line")
+        let note = Note(text: "First\n[Example](https://example.com)\nLast line", language: "Markdown")
         try store.save(note)
         let workspace = Workspace(store: store, skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
@@ -35,13 +35,14 @@ final class BlankEditorClickTests: XCTestCase {
         let edited = try await view.evaluateJavaScript("source()") as? String
         XCTAssertEqual(edited, note.text + "!", "Typing after the click must append to the last line")
     }
-    @MainActor func testRegularEditorCoversBlankSpaceBelowShortNote() throws {
+    @MainActor func testSourceEditorCoversBlankSpaceBelowShortNote() throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = Workspace(store: try RecoveryStore(directory: root), skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
         workspace.showWindow(nil)
+        workspace.toggleMarkdownPreview()
         workspace.editor.insertText("Last line", replacementRange: NSRange(location: 0, length: 0))
         workspace.window?.contentView?.layoutSubtreeIfNeeded()
         let clip = workspace.scroll.contentView

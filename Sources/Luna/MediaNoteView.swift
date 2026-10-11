@@ -40,6 +40,9 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     private var styleMenuURLOnNextLoad: String?
     private var dismissedStyleURLOnNextLoad: String?
     private var mentionCaretOnNextLoad: (url: String, index: Int)?
+    private var focusOnNextLoad = false
+    private var pendingInput: [[String: String]] = []
+    private var focusTask: Task<Void, Never>?
     private let mediaHandler: NoteMediaHandler
     private let messageProxy: WeakNoteMessageHandler
     private var lastSource: String?
@@ -47,6 +50,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     private var lastSize: CGFloat = 0
     private var lastDark = false
     private var pageID = UUID().uuidString
+    private var readyPageID: String?
     private var metadataTask: Task<Void, Never>?
     private var resolutionTask: Task<Void, Never>?
 
@@ -61,7 +65,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         messageProxy.view = self
         navigationDelegate = self
         setValue(false, forKey: "drawsBackground")
-        setAccessibilityLabel("Note with media and live embeds")
+        setAccessibilityLabel("Note editor")
         registerForDraggedTypes([.fileURL])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -71,8 +75,11 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         guard lastSource != note.text || lastID != note.id || lastSize != fontSize || lastDark != dark else { return }
         metadataTask?.cancel()
         resolutionTask?.cancel()
+        focusTask?.cancel(); focusTask = nil
+        if lastID != note.id { pendingInput.removeAll(); focusOnNextLoad = false }
         lastSource = note.text; lastID = note.id; lastSize = fontSize; lastDark = dark
         pageID = UUID().uuidString
+        readyPageID = nil
         mediaHandler.files = Dictionary(uniqueKeysWithValues: note.media.map {
             (Self.mediaURL($0, note: note), (store.attachmentURL($0, noteID: note.id), $0.mediaType))
         })
@@ -82,6 +89,11 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         metadataTask?.cancel()
         resolutionTask?.cancel()
         mentionCaretOnNextLoad = nil
+        focusOnNextLoad = false
+        focusTask?.cancel(); focusTask = nil
+        pendingInput.removeAll()
+        pageID = UUID().uuidString
+        readyPageID = nil
         lastSource = nil
         loadHTMLString("", baseURL: nil)
     }
@@ -101,14 +113,60 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         }
     }
     func insertSnippet(_ snippet: String, showsStyleMenu: Bool = false) {
+        let noteID = lastID
         Task {
-            _ = try? await callAsyncJavaScript("insertSnippet(snippet, showsStyleMenu)",
-                                               arguments: ["snippet": snippet, "showsStyleMenu": showsStyleMenu],
-                                               in: nil, contentWorld: .page)
+            // A new live note may still be loading when a paste or media import finishes.
+            for _ in 0..<100 {
+                guard lastID == noteID, lastSource != nil, !isHidden else { return }
+                if readyPageID == pageID, !isLoading {
+                    let inserted = try? await callAsyncJavaScript("""
+                        if (typeof page === 'undefined' || page !== expectedPage) return false;
+                        insertSnippet(snippet, showsStyleMenu); return true;
+                        """, arguments: ["expectedPage": pageID, "snippet": snippet, "showsStyleMenu": showsStyleMenu],
+                        in: nil, contentWorld: .page) as? Bool
+                    // Do not retry an indeterminate result and risk inserting the same text twice.
+                    if inserted != false { return }
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
         }
     }
     func selectAllNote() {
         Task { _ = try? await callAsyncJavaScript("selectAllNote()", in: nil, contentWorld: .page) }
+    }
+    func focusEditor() {
+        focusOnNextLoad = true
+        guard readyPageID == pageID, !isLoading, focusTask == nil else { return }
+        let currentPage = pageID
+        focusTask = Task {
+            defer { if pageID == currentPage { focusTask = nil } }
+            while pageID == currentPage, !isHidden, !Task.isCancelled {
+                let input = pendingInput
+                let focused = try? await callAsyncJavaScript("""
+                    if (page !== expectedPage || !focusTextEditor()) return false;
+                    replayPendingInput(input); return true;
+                    """, arguments: ["expectedPage": currentPage, "input": input], in: nil, contentWorld: .page) as? Bool
+                guard pageID == currentPage, focused == true else { return }
+                pendingInput.removeFirst(input.count)
+                if pendingInput.isEmpty { focusOnNextLoad = false; return }
+            }
+        }
+    }
+    func bufferInputUntilFocused(_ event: NSEvent) -> Bool {
+        guard focusOnNextLoad, !isHidden,
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+              let text = event.characters, !text.isEmpty else { return false }
+        let key: String
+        switch event.keyCode {
+        case 36, 76: key = "Enter"
+        case 51: key = "Backspace"
+        case 117: key = "Delete"
+        default:
+            guard text.unicodeScalars.allSatisfy({ $0.value >= 32 && $0.value != 127 && !(0xF700...0xF8FF).contains($0.value) }) else { return false }
+            key = "text"
+        }
+        pendingInput.append(["key": key, "text": text])
+        return true
     }
     fileprivate func receive(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let body = message.body as? [String: String],
@@ -139,12 +197,16 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let source = lastSource else { return }
+        readyPageID = pageID
         let currentPage = pageID
         if let mentionCaretOnNextLoad {
             self.mentionCaretOnNextLoad = nil
+            focusOnNextLoad = false
             Task { _ = try? await callAsyncJavaScript("focusAfterMention(url, index)",
                 arguments: ["url": mentionCaretOnNextLoad.url, "index": mentionCaretOnNextLoad.index],
                 in: nil, contentWorld: .page) }
+        } else if focusOnNextLoad {
+            focusEditor()
         }
         if let styleMenuURLOnNextLoad {
             self.styleMenuURLOnNextLoad = nil
@@ -200,39 +262,281 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
 
     private static let listScript = #"""
     let formattingList = false;
+    let listMarkerEdit = 0;
+    function markerHTML(marker,id='') {
+      const bullet=/^[-*+•]$/.test(marker);
+      return '<span class="list-marker'+(bullet?' bullet-marker':'')+'" data-prefix="'+marker+' "'+(id?' data-list-edit="'+id+'"':'')+'>'+(bullet?'•':marker)+'</span>\u200B';
+    }
+    function normalizeListCaret() {
+      const selection=getSelection();
+      if(!selection?.isCollapsed||!selection.rangeCount||document.body.classList.contains('composing'))return;
+      const node=selection.anchorNode;
+      let marker=node?.parentElement?.closest('.list-marker');
+      if(!marker&&node?.nodeType===Node.TEXT_NODE&&selection.anchorOffset===0)marker=node.previousSibling;
+      if(!marker&&node?.nodeType===Node.ELEMENT_NODE)marker=node.childNodes[selection.anchorOffset-1];
+      if(!marker?.matches?.('.list-marker')||!/^(?:[-*+•☐☑]|\d+\.)$/.test(marker.textContent))return;
+      // A cross-line deletion can leave the caret at the end of the marker and remove its body anchor.
+      let text=marker.nextSibling;
+      if(text?.nodeType!==Node.TEXT_NODE){text=document.createTextNode('\u200B');marker.after(text);}
+      else if(!text.textContent.startsWith('\u200B'))text.insertData(0,'\u200B');
+      const caret=document.createRange();caret.setStart(text,1);caret.collapse(true);
+      selection.removeAllRanges();selection.addRange(caret);
+    }
+    document.addEventListener('selectionchange',normalizeListCaret);
+    document.addEventListener('beforeinput',normalizeListCaret);
+    function restoreListBodyCaret() {
+      const selection=getSelection();if(!selection?.rangeCount||selection.isCollapsed)return;
+      const node=selection.anchorNode,block=(node.nodeType===Node.ELEMENT_NODE?node:node.parentElement)?.closest('.text');
+      if(!block)return;
+      const range=selection.getRangeAt(0),selected=range.toString().replace(/\u200B/g,'');
+      const marker=[...block.querySelectorAll('.list-marker')].find(marker=>
+        /^(?:[-*+•☐☑]|\d+\.)$/.test(marker.textContent)&&selected===marker.textContent&&range.intersectsNode(marker));
+      if(!marker)return;
+      // Undo can select the restored prefix. Subsequent typing belongs in its body.
+      let anchor=marker.nextSibling;
+      if(anchor?.nodeType!==Node.TEXT_NODE){anchor=document.createTextNode('\u200B');marker.after(anchor);}
+      else if(!anchor.textContent.startsWith('\u200B'))anchor.insertData(0,'\u200B');
+      const caret=document.createRange();caret.setStart(anchor,1);caret.collapse(true);
+      selection.removeAllRanges();selection.addRange(caret);
+    }
+    function restoreListSource(root) {
+      root.querySelectorAll('.list-marker').forEach(marker=>{
+        const text=marker.textContent;
+        // Only an intact visual bullet can use the original Markdown prefix.
+        // If its editable glyph changed, preserve that text instead of stale metadata.
+        const original=marker.dataset.prefix;
+        const source=text==='•'&&/^[-*+•] $/.test(original||'')?original[0]:text;
+        marker.replaceWith(document.createTextNode(source+(/^(?:[-*+•☐☑]|\d+\.)$/.test(text)?' ':'')));
+      });
+    }
+    function insertListText(text) {
+      const escaped=document.createElement('div');escaped.textContent=text;
+      let fenced=false,styled=false;
+      let html=escaped.innerHTML.split('\n').map(line=>{
+        if(/^[ \t]*(```|~~~)/.test(line)){fenced=!fenced;return line;}
+        if(fenced)return line;
+        return line.replace(/^([ \t]*)([-*+•☐☑]|\d+\.) /,(_,indent,marker)=>{
+          styled=true;return indent+markerHTML(marker);
+        });
+      }).join('<br>');
+      const rich=styled&&text.startsWith('\n');
+      const anchor=getSelection().anchorNode;
+      const row=(anchor?.nodeType===Node.ELEMENT_NODE?anchor:anchor?.parentElement)?.closest('div,p');
+      if(rich&&row?.closest('.text')&&!row.matches('.text')) {
+        // A BR fragment escapes a native paragraph and creates two line boundaries.
+        document.execCommand('insertParagraph');html=html.slice(4);
+      }
+      document.execCommand(rich?'insertHTML':'insertText',false,rich?html:text);
+    }
+    function decorateListMarkers(block,undoable=false) {
+      // The portable separator belongs to the atomic prefix, not the editable content.
+      const wasFormatting=formattingList;formattingList=true;
+      let atStart=true,fenced=false;
+      function visit(parent) {
+        for(const node of [...parent.childNodes]) {
+          if(node.nodeType===Node.ELEMENT_NODE) {
+            if(node.matches('br')){atStart=true;continue;}
+            const row=node.matches('div,p');if(row)atStart=true;
+            if(node.matches('.list-marker,a'))atStart=false;else visit(node);
+            if(row)atStart=true;
+            continue;
+          }
+          if(node.nodeType!==Node.TEXT_NODE)continue;
+          const value=node.textContent,parts=value.split('\n');let offset=0,matches=[];
+          for(let i=0;i<parts.length;i++) {
+            const part=parts[i];
+            if(atStart && /^[ \t\u200B]*(```|~~~)/.test(part))fenced=!fenced;
+            const match=atStart&&!fenced?part.match(/^([ \t\u200B]*)([-*+•☐☑]|\d+\.) /):null;
+            if(match)matches.push({start:offset+match[1].length,end:offset+match[0].length,marker:match[2]});
+            if(part.replace(/\u200B/g,'').length)atStart=false;if(i<parts.length-1)atStart=true;
+            offset+=part.length+1;
+          }
+          if(!matches.length)continue;
+          if(undoable) {
+            let target=node;
+            for(const match of matches.reverse()) {
+              const selection=getSelection(),anchor=selection.anchorNode,anchorOffset=selection.anchorOffset;
+              const range=document.createRange();range.setStart(target,match.start);range.setEnd(target,match.end);
+              selection.removeAllRanges();selection.addRange(range);
+              const id=String(++listMarkerEdit);
+              document.execCommand('insertHTML',false,markerHTML(match.marker,id));
+              const span=block.querySelector('[data-list-edit="'+id+'"]');
+              if(!span)continue;
+              const caret=document.createRange();
+              // WebKit treats offset zero after an inline span as the end of that span.
+              // Put the caret after the invisible anchor so typing stays in body text.
+              if(anchor===target && anchorOffset>=match.end)caret.setStart(span.nextSibling,anchorOffset-match.end+(span.nextSibling.textContent.startsWith('\u200B')?1:0));
+              else if(anchor===target)caret.setStart(span.previousSibling||span.firstChild,anchorOffset);
+              else caret.setStart(anchor,anchorOffset);
+              caret.collapse(true);selection.removeAllRanges();selection.addRange(caret);
+              target=span.previousSibling;
+            }
+            continue;
+          }
+          const fragment=document.createDocumentFragment();let start=0;
+          function append(end,marker) {
+            if(end<=start)return;
+            const text=document.createTextNode(value.slice(start,end));
+            if(marker){const template=document.createElement('template');template.innerHTML=markerHTML(marker.marker);fragment.append(template.content);}
+            else fragment.append(text);
+            start=end;
+          }
+          for(const match of matches){append(match.start);append(match.end,match);}append(value.length);
+          fragment.normalize();
+          node.replaceWith(fragment);
+        }
+      }
+      visit(block);
+      formattingList=wasFormatting;
+    }
     function currentLine() {
       const selection=getSelection();
       const node=selection.anchorNode;
       const block=(node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement)?.closest('.text');
       if(!block || !selection.isCollapsed)return null;
       const range=selection.getRangeAt(0).cloneRange();range.selectNodeContents(block);range.setEnd(selection.anchorNode,selection.anchorOffset);
-      const before=range.toString();const start=before.lastIndexOf('\n')+1;
+      // Range.toString omits WebKit's DIV/BR line boundaries and includes Mention tooltips.
+      const fragment=document.createElement('div');fragment.className='text';fragment.append(range.cloneContents());
+      restoreListSource(fragment);
+      fragment.querySelectorAll('a.mention-link').forEach(link=>link.replaceWith(document.createTextNode(link.querySelector('.mention-title').textContent)));
+      fragment.style.cssText='position:absolute;opacity:0;pointer-events:none;left:-10000px;';
+      document.body.append(fragment);const before=fragment.innerText.replace(/[\r\u200B]/g,'');fragment.remove();
+      const start=before.lastIndexOf('\n')+1;
       if((before.slice(0,start).match(/^\s*(```|~~~)/gm)||[]).length%2)return null;
       return {block, prefix:before.slice(start), start};
     }
     function replaceBefore(count,text) {
       const selection=getSelection();
+      const node=selection.anchorNode;
+      const marker=node?.nodeType===Node.TEXT_NODE&&node.textContent.slice(0,selection.anchorOffset).replace(/\u200B/g,'')===''?node.previousSibling:null;
+      if(marker?.matches?.('.list-marker')) {
+        const range=document.createRange();range.setStartBefore(marker);range.setEnd(node,selection.anchorOffset);
+        selection.removeAllRanges();selection.addRange(range);
+        formattingList=true;document.execCommand('insertHTML',false,'<span>\u200B</span>');formattingList=false;return;
+      }
       for(let i=0;i<count;i++)selection.modify('extend','backward','character');
-      formattingList=true;document.execCommand('insertText',false,text);formattingList=false;
+      formattingList=true;insertListText(text);formattingList=false;
+      const block=selection.anchorNode?.parentElement?.closest('.text');if(block)decorateListMarkers(block,true);
     }
-    document.addEventListener('input',()=>{
+    document.addEventListener('input',e=>{
+      if(e.inputType?.startsWith('history')){restoreListBodyCaret();return;}
       if(formattingList)return;
       const line=currentLine();if(!line)return;
       let formatted=line.prefix.replace(/^([ \t]*)(?:[-*+•] )?\[([ xX])\] /,(_,indent,check)=>indent+(check===' '?'☐ ':'☑ '))
-        .replace(/^([ \t]*)[-*+] /,'$1• ').replace(/^([ \t]*)(\d+)\) /,'$1$2. ');
+        .replace(/^([ \t]*)(\d+)\) /,'$1$2. ');
       if(formatted!==line.prefix)replaceBefore(line.prefix.length,formatted);
+      else if(/^([ \t]*)([-*+•☐☑]|\d+\.) $/.test(line.prefix))decorateListMarkers(line.block,true);
+    });
+    function indentLiveList(outdent) {
+      const selection=getSelection();if(!selection?.rangeCount)return false;
+      const range=selection.getRangeAt(0),node=range.startContainer;
+      const block=(node.nodeType===Node.ELEMENT_NODE?node:node.parentElement)?.closest('.text');
+      if(!block||!block.contains(range.endContainer))return false;
+      let markers=[...block.querySelectorAll('.list-marker')];
+      if(selection.isCollapsed) {
+        if(!currentLine()?.prefix.match(/^([ \t]*)([-*+•☐☑]|\d+\.) /))return false;
+        const before=range.cloneRange();before.selectNodeContents(block);before.setEnd(range.startContainer,range.startOffset);
+        markers=markers.slice(before.cloneContents().querySelectorAll('.list-marker').length-1).slice(0,1);
+      } else markers=markers.filter(marker=>{
+        const line=document.createRange();line.setStartBefore(marker);line.setEndAfter(marker);
+        let next=marker.nextSibling;
+        while(next&&!next.matches?.('br,div,p,.list-marker')){line.setEndAfter(next);next=next.nextSibling;}
+        return range.compareBoundaryPoints(Range.END_TO_START,line)<0&&range.compareBoundaryPoints(Range.START_TO_END,line)>0;
+      });
+      if(!markers.length)return false;
+      function offset(container,index) {const r=document.createRange();r.selectNodeContents(block);r.setEnd(container,index);return r.toString().length;}
+      let start=offset(range.startContainer,range.startOffset),end=offset(range.endContainer,range.endOffset);
+      const collapsed=selection.isCollapsed;
+      const clone=block.cloneNode(true),allMarkers=[...block.querySelectorAll('.list-marker')],clonedMarkers=[...clone.querySelectorAll('.list-marker')];
+      let changed=false;
+      for(const marker of markers.reverse()) {
+        const previous=marker.previousSibling;
+        const match=previous?.nodeType===Node.TEXT_NODE?previous.textContent.match(/(?:^|\n)([ \t\u200B]*)$/):null;
+        const indent=match?.[1]||'',visible=indent.replace(/\u200B/g,''),anchors=indent.replace(/[ \t]/g,'');
+        const removed=outdent?(visible.startsWith('\t')?1:Math.min(visible.match(/^ */)[0].length,liveTabWidth)):0;
+        const replacement=anchors+(outdent?visible.slice(removed):liveIndent+visible);
+        if(replacement===indent)continue;
+        const edit=document.createRange();edit.setStartBefore(marker);edit.collapse(true);
+        if(match){edit.setStart(previous,previous.length-indent.length);edit.setEnd(previous,previous.length);}
+        const editStart=offset(edit.startContainer,edit.startOffset),editEnd=offset(edit.endContainer,edit.endOffset),delta=replacement.length-indent.length;
+        const target=clonedMarkers[allMarkers.indexOf(marker)];
+        if(match)target.previousSibling.textContent=previous.textContent.slice(0,previous.length-indent.length)+replacement;
+        else target.before(document.createTextNode(replacement));
+        if(start>editStart||collapsed&&start===editStart)start=Math.max(editStart,start+delta);
+        if(end>=editEnd)end=Math.max(editStart,end+delta);
+        changed=true;
+      }
+      if(!changed)return true;
+      const indexes=markers.map(marker=>allMarkers.indexOf(marker)),firstIndex=Math.min(...indexes),lastIndex=Math.max(...indexes);
+      function prefixRange(first,last) {
+        const r=document.createRange(),previous=first.previousSibling;
+        const match=previous?.nodeType===Node.TEXT_NODE?previous.textContent.match(/(?:^|\n)([ \t\u200B]*)$/):null;
+        if(match)r.setStart(previous,previous.length-match[1].length);else r.setStartBefore(first);
+        r.setEndAfter(last);
+        if(last.nextSibling?.nodeType===Node.TEXT_NODE&&last.nextSibling.textContent.startsWith('\u200B'))r.setEnd(last.nextSibling,1);
+        return r;
+      }
+      const fragment=document.createElement('div');fragment.append(prefixRange(clonedMarkers[firstIndex],clonedMarkers[lastIndex]).cloneContents());
+      // Keep this transaction inside the touched lines; replacing an entire paragraph tree creates trailing rows.
+      const rows=[...fragment.querySelectorAll('div,p')];
+      rows.forEach(row=>{if(row.lastChild?.nodeName==='BR')row.lastChild.remove();});
+      for(const row of rows.reverse()) {
+        const inline=document.createDocumentFragment(),previous=row.previousSibling,next=row.nextSibling;
+        if(previous&&previous.nodeName!=='BR'&&previous.lastChild?.nodeName!=='BR'&&!previous.textContent.endsWith('\n'))inline.append(document.createElement('br'));
+        inline.append(...row.childNodes);
+        if(next&&inline.lastChild?.nodeName!=='BR'&&!next.matches?.('div,p,br')&&!next.textContent.startsWith('\n'))inline.append(document.createElement('br'));
+        row.replaceWith(inline);
+      }
+      formattingList=true;
+      const edit=prefixRange(allMarkers[firstIndex],allMarkers[lastIndex]);selection.removeAllRanges();selection.addRange(edit);
+      document.execCommand('insertHTML',false,fragment.innerHTML);formattingList=false;
+      function point(position) {
+        const walker=document.createTreeWalker(block,NodeFilter.SHOW_TEXT);let text,last;
+        while(text=walker.nextNode()){last=text;if(position<=text.length)return [text,position];position-=text.length;}
+        return last?[last,last.length]:[block,0];
+      }
+      const restored=document.createRange();restored.setStart(...point(start));restored.setEnd(...point(end));
+      selection.removeAllRanges();selection.addRange(restored);block.focus({preventScroll:true});normalizeListCaret();post('input');return true;
+    }
+    document.addEventListener('keydown',e=>{
+      if(e.defaultPrevented||e.key!=='Tab'||e.isComposing||e.metaKey||e.ctrlKey||e.altKey||!document.activeElement?.closest('.text'))return;
+      e.preventDefault();
+      if(!indentLiveList(e.shiftKey)&&!e.shiftKey){document.execCommand('insertText',false,liveIndent);post('input');}
     });
     document.addEventListener('keydown',e=>{
-      if(e.key!=='Enter'||e.shiftKey||e.isComposing)return;
+      if(!e.defaultPrevented&&!e.isComposing)normalizeListCaret();
+      if(!e.defaultPrevented&&e.key==='Backspace'&&!e.isComposing&&!e.altKey&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey) {
+        const insideMarker=getSelection().anchorNode?.parentElement?.closest('.list-marker');
+        const line=insideMarker?null:currentLine(),match=line?.prefix.match(/^([ \t]*)([-*+•☐☑]|\d+\.) $/);
+        if(match){e.preventDefault();replaceBefore(line.prefix.length,match[1]);post('input');return;}
+        const selection=getSelection(),node=selection.anchorNode;
+        if(selection.isCollapsed&&node?.nodeType===Node.TEXT_NODE&&selection.anchorOffset>0&&/^\u200B+$/.test(node.textContent.slice(0,selection.anchorOffset))&&!node.previousSibling?.matches?.('.list-marker')) {
+          const caret=document.createRange();caret.setStart(node,0);caret.collapse(true);
+          selection.removeAllRanges();selection.addRange(caret);
+        }
+
+      }
+      if(e.defaultPrevented||e.key!=='Enter'||e.shiftKey||e.isComposing)return;
       const line=currentLine();if(!line)return;
-      const match=line.prefix.match(/^([ \t]*)([•☐☑]|\d+\.) (.*)$/);if(!match)return;
+      const match=line.prefix.match(/^([ \t]*)([-*+•☐☑]|\d+\.) (.*)$/);if(!match)return;
       e.preventDefault();
       if(!match[3].trim())replaceBefore(line.prefix.length,'');
-      else {const marker=/^\d/.test(match[2])?(Number.parseInt(match[2])+1)+'.':match[2]==='•'?'•':'☐';document.execCommand('insertText',false,'\n'+match[1]+marker+' ');}
+      else {
+        const marker=/^\d/.test(match[2])?(Number.parseInt(match[2])+1)+'.':/^[-*+•]$/.test(match[2])?match[2]:'☐';
+        // An explicit BR keeps the next marker beside the break, including after an atomic Mention.
+        const prefix=match[1]+marker+' ';
+        formattingList=true;insertListText('\n'+prefix);formattingList=false;
+      }
       post('input');
     });
     document.addEventListener('click',e=>{
       if(!e.target.closest('.text'))return;
+      const prefix=e.target.closest('.list-marker');
+      if(prefix&&['☐','☑'].includes(prefix.textContent)) {
+        const range=document.createRange();range.selectNode(prefix);getSelection().removeAllRanges();getSelection().addRange(range);
+        formattingList=true;document.execCommand('insertHTML',false,markerHTML(prefix.textContent==='☐'?'☑':'☐'));formattingList=false;
+        post('input');return;
+      }
       const range=document.caretRangeFromPoint(e.clientX,e.clientY);if(!range || range.startContainer.nodeType!==Node.TEXT_NODE)return;
       const node=range.startContainer;const index=range.startOffset;const marker=node.textContent[index];
       if(!['☐','☑'].includes(marker))return;
@@ -247,10 +551,36 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     let activeSlashCommands=[];
     let slashSelection=0;
     let activeLink=null;
-    let wholeNoteSelectionText=null;
+    let wholeNoteSelectionText=null,wholeNoteSelectionRange=null,wholeNoteEditID=0;
+    function isWholeNoteSelected() {
+      const selection=getSelection();
+      if(wholeNoteSelectionText===null||!wholeNoteSelectionRange||!selection?.rangeCount)return false;
+      const range=selection.getRangeAt(0);
+      return range.compareBoundaryPoints(Range.START_TO_START,wholeNoteSelectionRange)===0&&
+        range.compareBoundaryPoints(Range.END_TO_END,wholeNoteSelectionRange)===0;
+    }
+    const wholeNoteEdits=[];
+    document.addEventListener('input',e=>{
+      if(!e.inputType?.startsWith('history'))return;
+      for(const record of [...wholeNoteEdits].reverse()) {
+        if(!record.block.isConnected)continue;
+        const applied=(record.block.textContent.match(/^\u200B*/)?.[0]||'')===record.anchor;
+        if(applied)record.others.forEach(child=>child.remove());
+        else if(record.applied&&e.inputType==='historyUndo') {
+          let previous=record.block;record.others.forEach(child=>{previous.after(child);previous=child;});
+        }
+        record.applied=applied;
+      }
+      post('input');
+    });
     function textSource(block) {
-      if(!block.querySelector?.('a.inline-link'))return block.innerText.replace(/[\r\u200B]/g,'');
+      if(!block.querySelector?.('a.inline-link,.list-marker,br'))return block.innerText.replace(/[\r\u200B]/g,'');
       const clone=block.cloneNode(true);
+      // WebKit leaves a final BR as an editing placeholder. It is not a saved blank line.
+      let tail=clone.lastChild;
+      while(tail?.nodeType===Node.ELEMENT_NODE&&tail.matches('div,p'))tail=tail.lastChild;
+      if(block.matches('[contenteditable="true"]')&&tail?.nodeType===Node.ELEMENT_NODE&&tail.matches('br'))tail.remove();
+      restoreListSource(clone);
       clone.querySelectorAll('a.inline-link').forEach(a=>{
         const label=a.classList.contains('mention-link')?'Mention':
           a.textContent===a.dataset.url?'URL':a.textContent.replaceAll('\\','\\\\').replaceAll(']','\\]');
@@ -267,9 +597,10 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     function placeCaretAfterMention(link) {
       const block=link?.closest('.text');if(!block)return;
       block.focus({preventScroll:true});
-      const range=document.createRange(),tail=link.nextSibling;
-      if(tail?.nodeType===Node.TEXT_NODE)range.setStart(tail,0);
-      else range.setStartAfter(link);
+      const range=document.createRange();let tail=link.nextSibling;
+      if(tail?.nodeType!==Node.TEXT_NODE){tail=document.createTextNode('\u200B');link.after(tail);}
+      else if(!tail.textContent.startsWith('\u200B'))tail.insertData(0,'\u200B');
+      range.setStart(tail,1);
       range.collapse(true);getSelection().removeAllRanges();getSelection().addRange(range);
     }
     function focusAfterMention(url,index) {
@@ -353,7 +684,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         const title=activeLinkMenu.querySelector('[data-link-field=title]').value.trim();
         const next=validLink(activeLinkMenu.querySelector('[data-link-field=url]').value.trim());
         if(!title||title.includes('\n')||!next){activeLinkMenu.querySelector('[data-link-field=url]').setCustomValidity('Enter a web URL and a one-line title.');activeLinkMenu.querySelector('[data-link-field=url]').reportValidity();return;}
-        link.dataset.url=next;link.href=next;link.classList.remove('mention-link');link.textContent=title;post('inlineLink');hideLinkMenu();return;
+        link.dataset.url=next;link.href=next;link.classList.remove('mention-link');link.textContent=title;post('inlineLink');hideLinkMenu();placeCaretAfterMention(link);return;
       }
       if(action==='copy'||action==='open'){window.webkit.messageHandlers.note.postMessage({page,kind:action==='copy'?'copyLink':'openLink',url});hideLinkMenu();return;}
       if(action==='remove'){link.replaceWith(document.createTextNode(link.querySelector('.mention-title')?.textContent??link.textContent));post('inlineLink');hideLinkMenu();return;}
@@ -417,10 +748,16 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       if(!e.composedPath().includes(activeSlashMenu))activeSlashMenu.classList.remove('open');
     });
     function selectAllNote(){
+      const focused=document.activeElement;
+      if(focused?.matches('input,textarea')){focused.select();return;}
       hideLinkMenu();activeSlashMenu.classList.remove('open');
-      const article=document.querySelector('article'),range=document.createRange();range.selectNodeContents(article);
+      const article=document.querySelector('article'),range=document.createRange();
+      const first=article.querySelector('.text');
+      first?.focus({preventScroll:true});
+      if(article.children.length===1&&first)range.selectNodeContents(first);
+      else range.selectNodeContents(article);
       getSelection().removeAllRanges();getSelection().addRange(range);
-      wholeNoteSelectionText=getSelection().toString();
+      wholeNoteSelectionText=getSelection().toString();wholeNoteSelectionRange=getSelection().getRangeAt(0).cloneRange();
       article.classList.add('whole-note-selected');
     }
     document.addEventListener('keydown',e=>{
@@ -429,38 +766,68 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
       e.preventDefault();selectAllNote();
     });
     document.addEventListener('selectionchange',()=>{
-      if(wholeNoteSelectionText!==null&&getSelection().toString()!==wholeNoteSelectionText){
-        wholeNoteSelectionText=null;document.querySelector('article').classList.remove('whole-note-selected');
+      if(wholeNoteSelectionText!==null&&!isWholeNoteSelected()){
+        wholeNoteSelectionText=null;wholeNoteSelectionRange=null;document.querySelector('article').classList.remove('whole-note-selected');
       }
     });
     document.addEventListener('pointerdown',e=>{if(e.target.closest('article')){
-      wholeNoteSelectionText=null;document.querySelector('article').classList.remove('whole-note-selected');
+      wholeNoteSelectionText=null;wholeNoteSelectionRange=null;document.querySelector('article').classList.remove('whole-note-selected');
     }},true);
     document.addEventListener('copy',e=>{
-      if(wholeNoteSelectionText===null||getSelection().toString()!==wholeNoteSelectionText)return;
-      e.clipboardData.setData('text/plain',source());e.preventDefault();
+      const selection=getSelection();
+      if(isWholeNoteSelected()) {
+        e.clipboardData.setData('text/plain',source());e.preventDefault();return;
+      }
+      if(selection.isCollapsed||!selection.rangeCount)return;
+      const fragment=selection.getRangeAt(0).cloneContents();
+      if(!fragment.querySelector('.list-marker'))return;
+      const block=document.createElement('div');block.className='text';block.append(fragment);
+      e.clipboardData.setData('text/plain',textSource(block));e.preventDefault();
+    });
+    document.addEventListener('cut',e=>{
+      if(!isWholeNoteSelected())return;
+      e.clipboardData.setData('text/plain',source());e.preventDefault();replaceWholeNote('');
     });
     document.addEventListener('keydown',e=>{
       if(!e.metaKey||e.altKey||e.ctrlKey||e.shiftKey||e.key.toLowerCase()!=='c'||
-         wholeNoteSelectionText===null||getSelection().toString()!==wholeNoteSelectionText)return;
+         !isWholeNoteSelected())return;
       e.preventDefault();window.webkit.messageHandlers.note.postMessage({page,kind:'copySelection',source:source()});
     });
-    document.addEventListener('keydown',e=>{
-      if(e.key!=='Backspace'&&e.key!=='Delete'&&e.key!=='Del')return;
+    function replaceWholeNote(value) {
       const article=document.querySelector('article'),selection=getSelection();
-      if(!wholeNoteSelectionText||selection.isCollapsed||selection.toString()!==wholeNoteSelectionText)return;
-      wholeNoteSelectionText=null;article.classList.remove('whole-note-selected');
-      e.preventDefault();hideLinkMenu();activeSlashMenu.classList.remove('open');
-      const block=document.createElement('div');block.className='text';block.contentEditable='true';
-      block.spellcheck=false;block.dataset.block='';article.replaceChildren(block);block.focus({preventScroll:true});
-      post('structure');
+      if(!isWholeNoteSelected())return false;
+      wholeNoteSelectionText=null;wholeNoteSelectionRange=null;article.classList.remove('whole-note-selected');
+      hideLinkMenu();activeSlashMenu.classList.remove('open');
+      const block=article.children.length===1?article.querySelector('.text'):null;
+      if(block) {
+        block.focus({preventScroll:true});const range=document.createRange();range.selectNodeContents(block);
+        selection.removeAllRanges();selection.addRange(range);
+        document.execCommand(value?'insertText':'delete',false,value);
+      } else {
+        const first=article.querySelector('.text');if(!first)return false;
+        // A source-excluded anchor identifies the native text transaction without splitting typing's Undo group.
+        const record={anchor:'\u200B'.repeat(++wholeNoteEditID+1),block:first,others:[...article.children].filter(child=>child!==first),applied:true};
+        wholeNoteEdits.push(record);
+        first.focus({preventScroll:true});const range=document.createRange();range.selectNodeContents(first);
+        selection.removeAllRanges();selection.addRange(range);
+        document.execCommand('insertText',false,record.anchor+value);
+        record.others.forEach(child=>child.remove());
+        first.focus({preventScroll:true});
+      }
+      post('input');return true;
+    }
+    document.addEventListener('keydown',e=>{
+      if(e.isComposing||e.metaKey||e.ctrlKey||e.altKey)return;
+      const deletion=['Backspace','Delete','Del'].includes(e.key);
+      const value=deletion?'':e.key==='Enter'?'\n':e.key.length===1?e.key:null;
+      if(value!==null&&replaceWholeNote(value))e.preventDefault();
     });
     const slashCommands=[
       {group:'Basic blocks',name:'Text',keys:['text','paragraph'],insert:''},
       {group:'Basic blocks',name:'Heading 1',keys:['h1','heading'],insert:'# '},
       {group:'Basic blocks',name:'Heading 2',keys:['h2','heading'],insert:'## '},
       {group:'Basic blocks',name:'Quote',keys:['quote'],insert:'> '},
-      {group:'Lists',name:'Bulleted list',keys:['bullet','list'],insert:'• '},
+      {group:'Lists',name:'Bulleted list',keys:['bullet','list'],insert:'- '},
       {group:'Lists',name:'Numbered list',keys:['number','list'],insert:'1. '},
       {group:'Lists',name:'To-do list',keys:['todo','check','list'],insert:'☐ '},
       {group:'More',name:'Code block',keys:['code'],insert:'```\n\n```'},
@@ -504,6 +871,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
 
     static func page(_ note: Note, fontSize: CGFloat, dark: Bool, pageID: String) -> String {
         let escape = NoteEmbeds.escape
+        let steadyCaret = Bundle.main.object(forInfoDictionaryKey: "LunaDevelopmentBuild") as? Bool == true
         var html = ""
         var embedIndex = 0
         var previewIndex = 0
@@ -558,6 +926,16 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         :root {color-scheme: \(dark ? "dark" : "light");}
         body {box-sizing:border-box;min-height:100vh;margin:0;padding:24px 40px 80px;color:\(dark ? "#cccccc" : "#242833");font:\(fontSize)px/1.8 -apple-system,BlinkMacSystemFont,sans-serif;}
         article {max-width:72ch;margin:0;} .text {white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.8em;outline:none;}
+        .text div,.text p {min-height:1.8em;margin:0;} .text div > br:last-child,.text p > br:last-child {display:none;}
+        .list-marker {display:inline-block;width:1.25em;margin-left:0;margin-right:.25em;text-align:right;font-variant-numeric:tabular-nums;}
+        .list-marker:empty {display:none;}
+        .bullet-marker {--bullet-scale:1.45;font-size:calc(1em * var(--bullet-scale));width:calc(1.25em / var(--bullet-scale));margin-right:calc(.25em / var(--bullet-scale));line-height:0;text-align:center;}
+        .text {caret-color:transparent;} body.composing .text {caret-color:auto;}
+        #text-caret {position:fixed;width:1px;background:currentColor;pointer-events:none;z-index:2;animation:\(steadyCaret ? "none" : "caret-blink 1s step-end infinite");}
+        #text-caret[hidden] {display:none;} @keyframes caret-blink {50% {opacity:0;}}
+        #caret-guide {position:fixed;top:0;bottom:0;border-left:1px dashed #f7a65c;pointer-events:none;z-index:1;}
+        #caret-readout {position:fixed;bottom:8px;left:40px;font:11px/1.4 monospace;background:#242833;color:#fff;padding:3px 6px;pointer-events:none;z-index:3;}
+        @media (prefers-reduced-motion:reduce) {#text-caret {animation:none;}}
         .inline-link {text-decoration:underline;text-underline-offset:3px;cursor:pointer;} .inline-link:hover {text-decoration-thickness:2px;}
         .inline-link:not(.mention-link),figure.linked-text > a {color:\(dark ? "#a0a4aa" : "#606773");}
         .mention-link {display:inline-flex;align-items:center;gap:5px;max-width:100%;vertical-align:baseline;text-decoration:none;font-weight:600;position:relative;}
@@ -604,14 +982,83 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         .remove::after {transform:translate(-50%,-50%) rotate(-45deg);}
         figure:hover .remove, .remove:focus-visible {opacity:1;} ::selection {background:#19f9d838;}
         article.whole-note-selected > * {background-color:#19f9d838;}
-        </style></head><body><article>\(html)</article><div id="link-popover" class="editor-popover" role="dialog" aria-label="Link options"></div><div id="slash-popover" class="editor-popover" role="listbox" aria-label="Insert block"></div>
+        </style></head><body><article>\(html)</article><div id="text-caret" hidden aria-hidden="true"></div><div id="caret-guide" hidden aria-hidden="true"></div><div id="caret-readout" hidden aria-hidden="true"></div><div id="link-popover" class="editor-popover" role="dialog" aria-label="Link options"></div><div id="slash-popover" class="editor-popover" role="listbox" aria-label="Insert block"></div>
         <script nonce="\(pageID)">
         const page = '\(pageID)';
+        const liveTabWidth=\(EditorPreferences.tabWidth),liveIndent='\(EditorPreferences.useTabs ? "\\t" : String(repeating: " ", count: EditorPreferences.tabWidth))';
         function source() {return [...document.querySelectorAll('[data-block]')].filter(e=>e.dataset.spacer!=='true'||e.innerText!=='').map(e=>e.dataset.source ?? textSource(e)).join('\\n');}
         function post(kind, extra={}) {window.webkit.messageHandlers.note.postMessage({page,kind,source:source(),...extra});}
         \(listScript)
         \(editorScript)
-        document.addEventListener('input',e=>{const block=e.target.closest('.text');if(block){if(e.inputType?.startsWith('delete')&&block.textContent==='')block.replaceChildren();post('input');updateSlashMenu();}});
+        document.querySelectorAll('.text').forEach(block=>decorateListMarkers(block));
+        let caretDebug=false,caretFrame=0,caretWindowActive=true;
+        function updateTextCaret() {
+          const indicator=document.getElementById('text-caret'),selection=getSelection();
+          const guide=document.getElementById('caret-guide'),readout=document.getElementById('caret-readout');
+          const node=selection?.anchorNode,block=(node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement)?.closest('.text');
+          indicator.hidden=true;guide.hidden=true;readout.hidden=true;
+          if(!caretWindowActive||!selection?.isCollapsed||!selection.rangeCount||!block||document.activeElement!==block||document.body.classList.contains('composing'))return;
+          if(document.querySelector('.editor-popover.open'))return;
+          const range=selection.getRangeAt(0).cloneRange();
+          if(node.nodeType===Node.ELEMENT_NODE) {
+            const before=node.childNodes[selection.anchorOffset-1];
+            if(before?.nodeType===Node.TEXT_NODE){range.setStart(before,before.textContent.length);range.collapse(true);}
+          }
+          // WebKit may split a glyph's advance between the visible letter and a
+          // following zero-width anchor. Measure past anchors without changing
+          // the editing selection, so the drawn caret reaches the glyph's edge.
+          const geometryNode=range.startContainer;
+          if(geometryNode.nodeType===Node.TEXT_NODE) {
+            let offset=range.startOffset;
+            while(geometryNode.textContent[offset]==='\\u200B')offset++;
+            range.setStart(geometryNode,offset);range.collapse(true);
+          }
+          let rect=range.getBoundingClientRect();const style=getComputedStyle(block),height=parseFloat(style.fontSize);
+          if(!rect.height) {
+            const element=node.nodeType===Node.ELEMENT_NODE?node:node.parentElement;
+            const row=element?.closest('div,p');
+            if(row?.closest('.text')===block&&row.textContent.replace(/\\u200B/g,'')==='') {
+              const bounds=row.getBoundingClientRect();rect={left:bounds.left,top:bounds.top,height:parseFloat(style.lineHeight)};
+            } else if(block.textContent==='') {
+              const bounds=block.getBoundingClientRect();rect={left:bounds.left,top:bounds.top,height:parseFloat(style.lineHeight)};
+            }
+          }
+          if(!rect.height)return;
+          indicator.style.left=rect.left+'px';indicator.style.top=(rect.top+(rect.height-height)/2)+'px';indicator.style.height=height+'px';
+          indicator.hidden=false;
+          if(caretDebug) {
+            guide.style.left=rect.left+'px';guide.hidden=false;
+            const preceding=node.nodeType===Node.TEXT_NODE?node.textContent.slice(0,selection.anchorOffset).replace(/\\u200B/g,'').slice(-12):'';
+            readout.textContent='Caret after '+JSON.stringify(preceding)+' · x '+rect.left.toFixed(1)+' · y '+parseFloat(indicator.style.top).toFixed(1);
+            readout.hidden=false;
+          }
+        }
+        function refreshTextCaret() {
+          updateTextCaret();
+          // WebKit can finalize selection/layout after an edit's input listeners.
+          // Refresh again before painting without queuing a frame for every event.
+          if(!caretFrame)caretFrame=requestAnimationFrame(()=>{caretFrame=0;updateTextCaret();});
+        }
+        function hideTextCaret() {
+          ['text-caret','caret-guide','caret-readout'].forEach(id=>document.getElementById(id).hidden=true);
+          if(caretFrame){cancelAnimationFrame(caretFrame);caretFrame=0;}
+        }
+        document.addEventListener('selectionchange',refreshTextCaret);
+        document.addEventListener('input',refreshTextCaret);
+        document.addEventListener('keyup',refreshTextCaret);
+        document.addEventListener('focusin',refreshTextCaret);
+        document.addEventListener('focusout',hideTextCaret);
+        document.addEventListener('scroll',refreshTextCaret,true);window.addEventListener('resize',refreshTextCaret);
+        window.addEventListener('blur',()=>{caretWindowActive=false;hideTextCaret();});
+        window.addEventListener('focus',()=>{caretWindowActive=true;refreshTextCaret();});
+        document.addEventListener('keydown',e=>{
+          if(\(steadyCaret)&&e.ctrlKey&&e.altKey&&!e.metaKey&&e.code==='KeyD') {
+            e.preventDefault();caretDebug=!caretDebug;refreshTextCaret();
+          }
+        });
+        document.addEventListener('compositionstart',()=>{document.body.classList.add('composing');updateTextCaret();});
+        document.addEventListener('compositionend',()=>{document.body.classList.remove('composing');updateTextCaret();});
+        document.addEventListener('input',e=>{const block=e.target.closest('.text');if(block){if(e.inputType?.startsWith('delete')&&block.textContent==='')block.replaceChildren();if(!formattingList&&!e.inputType?.startsWith('history'))decorateListMarkers(block,true);post('input');updateSlashMenu();}});
         document.addEventListener('click',e=>{
           document.querySelectorAll('.link-style[open]').forEach(menu=>{
             if(menu.contains(e.target))return;
@@ -676,13 +1123,30 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
           const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
         });
         function placeCaret(x,y) {const r=document.caretRangeFromPoint(x,y);if(r&&r.startContainer.parentElement.closest('.text')){const s=getSelection();s.removeAllRanges();s.addRange(r);}}
+        function focusTextEditor() {
+          const block=document.querySelector('.text');if(!block)return false;
+          const selection=getSelection();
+          const selected=(selection.anchorNode?.nodeType===Node.ELEMENT_NODE?selection.anchorNode:selection.anchorNode?.parentElement)?.closest('.text');
+          if(selected){selected.focus({preventScroll:true});return true;}
+          block.focus({preventScroll:true});
+          const range=document.createRange();range.selectNodeContents(block);range.collapse(true);
+          selection.removeAllRanges();selection.addRange(range);normalizeListCaret();return true;
+        }
+        function replayPendingInput(input) {
+          for(const value of input) {
+            if(value.key==='text'){document.execCommand('insertText',false,value.text);continue;}
+            const event=new KeyboardEvent('keydown',{key:value.key,bubbles:true,cancelable:true});
+            document.dispatchEvent(event);
+            if(!event.defaultPrevented)document.execCommand(value.key==='Enter'?'insertParagraph':value.key==='Backspace'?'delete':'forwardDelete');
+          }
+        }
         function insertSnippet(snippet, showsStyleMenu=false) {
           const selected=getSelection();const node=selected.anchorNode;let block=(node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement)?.closest('.text');
           if(!block){block=document.querySelector('.text:last-child');if(!block){block=document.createElement('div');block.className='text';block.contentEditable='true';block.dataset.block='';document.querySelector('article').append(block);}block.focus();const range=document.createRange();range.selectNodeContents(block);range.collapse(false);selected.removeAllRanges();selected.addRange(range);}
           if(showsStyleMenu){const match=snippet.match(/^\\[URL\\]\\((https?:\\/\\/[^)]+)\\)$/);if(match){const range=selected.getRangeAt(0);range.deleteContents();const a=document.createElement('a');a.className='inline-link';a.dataset.url=match[1];a.href=match[1];a.textContent=match[1];range.insertNode(a);range.setStartAfter(a);range.collapse(true);selected.removeAllRanges();selected.addRange(range);post('inlineLink');showLinkMenu(a,true);return;}}
-          document.execCommand('insertText',false,snippet);post('structure');
+          insertListText(snippet);post('structure');
         }
-        document.addEventListener('paste',e=>{if(!e.target.closest('.text'))return;const text=e.clipboardData.getData('text/plain');e.preventDefault();if(/^(https?:\\/\\/\\S+)$/.test(text.trim())||/<iframe/i.test(text)){window.webkit.messageHandlers.note.postMessage({page,kind:'paste',value:text});}else{document.execCommand('insertText',false,text);post('input');}});
+        document.addEventListener('paste',e=>{if(!e.target.closest('.text'))return;const text=e.clipboardData.getData('text/plain');e.preventDefault();const whole=wholeNoteSelectionText!==null;if(whole&&!/^(https?:\\/\\/\\S+)$/.test(text.trim())&&!/<iframe/i.test(text)&&replaceWholeNote(text))return;replaceWholeNote('');if(/^(https?:\\/\\/\\S+)$/.test(text.trim())||/<iframe/i.test(text)){window.webkit.messageHandlers.note.postMessage({page,kind:'paste',value:text});}else{insertListText(text);post('input');}});
         document.addEventListener('scroll',()=>{hideLinkMenu();activeSlashMenu.classList.remove('open');document.querySelectorAll('.link-style[open]').forEach(positionBlockStyleMenu);},true);
         window.addEventListener('resize',()=>document.querySelectorAll('.link-style[open]').forEach(positionBlockStyleMenu));
         function openStyleMenu(url) {const links=[...document.querySelectorAll('a.inline-link[data-url]')].filter(e=>e.dataset.url===url);if(links.length){showLinkMenu(links[links.length-1],true);return;}const figures=[...document.querySelectorAll('figure.linked-text[data-url]')].filter(e=>e.dataset.url===url);const figure=figures[figures.length-1];figure?.classList.remove('style-dismissed');figure?.querySelector('.link-style')?.setAttribute('open','');}

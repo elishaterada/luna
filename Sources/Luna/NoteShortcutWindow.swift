@@ -5,6 +5,7 @@ final class NoteShortcutWindow: NSWindow {
     var deleteSelectedNote: (() -> Void)?
     var selectNoteNumber: ((Int) -> Bool)?
     var showShortcutHints: ((Bool) -> Void)?
+    var bufferPendingNoteInput: ((NSEvent) -> Bool)?
     private var hintTimer: Timer?
     private var holdingCommand = false
 
@@ -29,6 +30,7 @@ final class NoteShortcutWindow: NSWindow {
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, handleNoteShortcut(event) { return }
+        if event.type == .keyDown, attachedSheet == nil, bufferPendingNoteInput?(event) == true { return }
         if event.type == .flagsChanged {
             updateShortcutModifiers(event.modifierFlags)
         }

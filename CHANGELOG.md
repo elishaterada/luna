@@ -1,5 +1,15 @@
 # Luna release notes
 
+## 0.12.0 — 2026-10-11
+
+- New notes open in Markdown Live View for lightweight formatted writing. Plain Text and Markdown Source display literal text.
+- Lists have aligned content, clearer bullet dots, and tighter spacing. Standard `-`, `*`, and `+` markers stay intact when saved or copied.
+- Numbered lists keep counting, and Return after a link mention continues the list without an extra blank line.
+- Carets stay aligned with typed letters and remain visible on empty lines. Typing and deleting around list markers keeps normal text size.
+- Tab and Shift+Tab indent individual or selected list items. Select All supports deletion, replacement, cut, paste, and undo while keeping the editor ready to type.
+- Link fields keep Select All within the field, and saving a link returns focus to the note. Typing immediately after creating a note preserves the first characters.
+- The footer shows the build ID so updates and test builds are easy to identify.
+
 ## 0.11.0 — 2026-10-05
 
 - Bookmarks now show a page’s preview image beside its favicon, title, description, and URL when the page provides one.

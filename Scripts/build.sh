@@ -9,7 +9,8 @@ cp .build/release/Luna "$APP/Contents/MacOS/Luna"
 ditto .build/release/Luna_Luna.bundle "$APP/Contents/Resources/Luna_Luna.bundle"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 if [[ -n "${MARKETING_VERSION:-}" ]]; then /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$APP/Contents/Info.plist"; fi
-if [[ -n "${CURRENT_PROJECT_VERSION:-}" ]]; then /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CURRENT_PROJECT_VERSION" "$APP/Contents/Info.plist"; fi
+LUNA_BUILD_ID="${CURRENT_PROJECT_VERSION:-$(date -u +%Y%m%d%H%M%S)}"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $LUNA_BUILD_ID" "$APP/Contents/Info.plist"
 if [[ "${LUNA_DEVELOPMENT_BUILD:-0}" == "1" ]]; then
   /usr/libexec/PlistBuddy -c "Add :LunaDevelopmentBuild bool true" "$APP/Contents/Info.plist"
 fi
@@ -26,4 +27,4 @@ done
 codesign --force --sign - "$FRAMEWORK"
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
-echo "Built $APP"
+echo "Built $APP (build $LUNA_BUILD_ID)"

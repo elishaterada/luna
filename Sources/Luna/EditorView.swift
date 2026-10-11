@@ -12,7 +12,7 @@ final class EditorView: NSTextView {
         .init(group: "Basic blocks", title: "Heading 1", search: "h1 heading", insertion: "# "),
         .init(group: "Basic blocks", title: "Heading 2", search: "h2 heading", insertion: "## "),
         .init(group: "Basic blocks", title: "Quote", search: "quote", insertion: "> "),
-        .init(group: "Lists", title: "Bulleted list", search: "bullet list", insertion: "• "),
+        .init(group: "Lists", title: "Bulleted list", search: "bullet list", insertion: "- "),
         .init(group: "Lists", title: "Numbered list", search: "number list", insertion: "1. "),
         .init(group: "Lists", title: "To-do list", search: "todo checkbox list", insertion: "☐ "),
         .init(group: "More", title: "Code block", search: "code", insertion: "```\n\n```"),
@@ -204,7 +204,7 @@ final class EditorView: NSTextView {
     var onFileDrop: (([URL]) -> Void)?
     var onEmbedPaste: ((String) -> Void)?
     override func paste(_ sender: Any?) {
-        if let value = NSPasteboard.general.string(forType: .string),
+        if formatsLists, let value = NSPasteboard.general.string(forType: .string),
            let snippet = URLPasteChoice.linkedSnippet(for: value) {
             if let onEmbedPaste { onEmbedPaste(snippet) }
             else { insertText(snippet, replacementRange: selectedRange()) }
@@ -340,7 +340,7 @@ final class EditorView: NSTextView {
 
     override func deleteBackward(_ sender: Any?) {
         let selection = selectedRange()
-        guard formatsLists, !hasMarkedText(), selection.length == 0 else {
+        guard formatsLists, !hasMarkedText() else {
             super.deleteBackward(sender); return
         }
         let source = string as NSString
@@ -358,7 +358,9 @@ final class EditorView: NSTextView {
         let indentLength = (String(line.prefix { $0 == " " || $0 == "\t" }) as NSString).length
         let localCaret = selection.location - row.location
         let empty = (line as NSString).substring(from: prefixLength).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard localCaret > indentLength, localCaret <= prefixLength || empty else {
+        let selectedPrefix = selection.length > 0 && localCaret >= indentLength &&
+            NSMaxRange(selection) <= row.location + prefixLength
+        guard selectedPrefix || (selection.length == 0 && localCaret > indentLength && (localCaret <= prefixLength || empty)) else {
             super.deleteBackward(sender); return
         }
         if empty {
@@ -463,7 +465,14 @@ extension EditorView: NSTextContentStorageDelegate {
         let marker = String(prefix[markerRange])
         let attributed = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: range))
         let paragraph = (defaultParagraphStyle?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
-        paragraph.headIndent = (marker as NSString).size(withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 18)]).width
+        let bodyFont = font ?? NSFont.systemFont(ofSize: 18)
+        let inset = bodyFont.pointSize * 0.5
+        if let bullet = marker.range(of: "•") {
+            attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: bodyFont.pointSize),
+                                    range: NSRange(bullet, in: marker))
+        }
+        paragraph.firstLineHeadIndent = inset
+        paragraph.headIndent = inset + attributed.attributedSubstring(from: NSRange(location: 0, length: (marker as NSString).length)).size().width
         attributed.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: attributed.length))
         return NSTextParagraph(attributedString: attributed)
     }

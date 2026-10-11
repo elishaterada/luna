@@ -109,7 +109,9 @@ final class MarkdownPreviewTests: XCTestCase {
         let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
                                   skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
         defer { workspace.close() }
-        let note = Note(text: "🌙\n\n[] First\n[] Second", language: "Markdown")
+        let url = root.appendingPathComponent("tasks.md")
+        try "🌙\n\n[] First\n[] Second".write(to: url, atomically: true, encoding: .utf8)
+        let note = try TextFile.read(url)
         workspace.notes.append(note)
         workspace.reloadShelf(); workspace.select(note.id)
         workspace.toggleMarkdownPreview()
@@ -157,7 +159,9 @@ final class MarkdownPreviewTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
                                   skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
-        let markdown = Note(text: "# Original", language: "Markdown")
+        let url = root.appendingPathComponent("note.md")
+        try "# Original".write(to: url, atomically: true, encoding: .utf8)
+        let markdown = try TextFile.read(url)
         let code = Note(text: "let x = 1", language: "Swift")
         workspace.notes += [markdown, code]
         workspace.reloadShelf(); workspace.select(markdown.id)

@@ -1,6 +1,6 @@
 import AppKit
 
-/// Visible list markers remain portable when a note is saved as plain text.
+/// List continuations preserve the user's standard Markdown bullet marker.
 enum NoteLists {
     static let pattern = #"^(\s*)(?:([-*+•]) |(\d+)[.)] |([☐☑]) )"#
     static func formatted(_ text: String) -> String {
@@ -15,7 +15,6 @@ enum NoteLists {
             guard fence == nil else { return line }
             return line.replacingOccurrences(of: #"^([ \t]*)(?:[-*+•] )?\[[xX]\] "#, with: "$1☑ ", options: .regularExpression)
                 .replacingOccurrences(of: #"^([ \t]*)(?:[-*+•] )?\[ \] "#, with: "$1☐ ", options: .regularExpression)
-                .replacingOccurrences(of: #"^([ \t]*)[-*+] "#, with: "$1• ", options: .regularExpression)
                 .replacingOccurrences(of: #"^([ \t]*)(\d+)\) "#, with: "$1$2. ", options: .regularExpression)
         }.joined(separator: "\n")
     }
@@ -29,7 +28,7 @@ enum NoteLists {
             guard let number = Int(ns.substring(with: match.range(at: 3))), number < Int.max else { return nil }
             marker = "\(number + 1). "
         } else if match.range(at: 4).location != NSNotFound { marker = "☐ " }
-        else { marker = "• " }
+        else { marker = ns.substring(with: match.range(at: 2)) + " " }
         return (indent + marker, ns.substring(from: match.range.length).trimmingCharacters(in: .whitespaces).isEmpty)
     }
 }

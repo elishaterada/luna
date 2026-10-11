@@ -15,6 +15,7 @@ final class ScrolledEditorLayoutTests: XCTestCase {
         let note = Note(text: String(repeating: block, count: 4), language: "Markdown")
         workspace.notes.append(note); workspace.reloadShelf(); workspace.select(note.id)
         workspace.showWindow(nil)
+        workspace.toggleMarkdownPreview()
         workspace.window?.setContentSize(NSSize(width: 1000, height: 700))
         workspace.window?.contentView?.layoutSubtreeIfNeeded()
         try await Task.sleep(nanoseconds: 100_000_000)

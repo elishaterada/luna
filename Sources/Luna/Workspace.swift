@@ -64,6 +64,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     let notePath = NotePathView()
     let subtitle = Theme.label("Private note · kept on this Mac", size: 11)
     let status = Theme.label("All notes stay with you", size: 11)
+    let buildLabel = Theme.label("Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development")", size: 10)
     let updated = Theme.label("", size: 11)
     let position = Theme.label("Ln 1, Col 1", size: 11)
     let language = NSPopUpButton()
@@ -97,6 +98,12 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         window.deleteSelectedNote = { [weak self] in self?.deleteNote() }
         window.selectNoteNumber = { [weak self] number in self?.selectNote(number: number) ?? false }
         window.showShortcutHints = { [weak self] visible in self?.table.showsShortcutHints = visible }
+        window.bufferPendingNoteInput = { [weak self] event in
+            guard let self, self.richEditing else { return false }
+            let focused = self.window?.firstResponder as? NSView
+            guard focused === self.mediaView || focused?.isDescendant(of: self.mediaView) == true else { return false }
+            return self.mediaView.bufferInputUntilFocused(event)
+        }
         let dropRoot = FileDropView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
         dropRoot.onFileDrop = { [weak self] urls in self?.openDroppedFiles(urls) }
         window.contentView = dropRoot
@@ -117,7 +124,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             alert.informativeText = "Luna kept the unreadable recovery files untouched in \(store.directory.path). Other notes are available."
             alert.runModal()
         }
-        if notes.isEmpty { notes = [Note()] }
+        if notes.isEmpty { notes = [Note(language: "Markdown")] }
         self.session.windows.add(self)
         reloadShelf(); select(notes[0].id)
     }
@@ -224,7 +231,11 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         sizeLabel.alignment = .center
         sizeLabel.widthAnchor.constraint(equalToConstant: 36).isActive = true
         let textSizeControls = NSStackView(views: [smallerButton, sizeLabel, largerButton]); textSizeControls.spacing = 0
-        let footer = NSStackView(views: [status, NSView(), position, language, textSizeControls]); footer.spacing = 12
+        let statusStack = NSStackView(views: [status, buildLabel]); statusStack.orientation = .vertical
+        statusStack.alignment = .leading; statusStack.spacing = 2
+        buildLabel.setAccessibilityLabel(buildLabel.stringValue)
+        buildLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let footer = NSStackView(views: [statusStack, NSView(), position, language, textSizeControls]); footer.spacing = 12
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         position.setContentCompressionResistancePriority(.required, for: .horizontal)
         sizeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -412,15 +423,24 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         previewing = false; splitPreviewing = false
         selectedID = id
         guard let index else { return }
-        richEditing = NoteEmbeds.hasContent(notes[index].text)
+        richEditing = supportsLiveEditing(notes[index])
         loading = true; editor.string = notes[index].text; editor.undoManager?.removeAllActions(); loading = false
-        language.selectItem(withTitle: notes[index].language); highlighter.configure(notes[index].language)
+        language.selectItem(withTitle: notes[index].language); highlighter.configure(sourceLanguage)
         table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         editor.setSelectedRange(NSRange(location: 0, length: 0)); editor.scrollToBeginningOfDocument(nil)
         updateHeader(); updateFont(); viewportChanged()
         if focusContent || sidebar.isHidden { self.focusContent() }
         else { window?.makeFirstResponder(table) }
         refreshCleanFile(id)
+    }
+    private func supportsLiveEditing(_ note: Note) -> Bool {
+        guard note.language != "Plain Text" else { return false }
+        return NoteEmbeds.hasContent(note.text) ||
+            (note.path == nil && note.language == "Markdown" && note.text.utf8.count <= 2_000_000)
+    }
+    private var sourceLanguage: String {
+        guard let index else { return "Plain Text" }
+        return notes[index].language == "Markdown" ? "Plain Text" : notes[index].language
     }
     func refreshCleanFile(_ id: UUID) {
         guard let note = notes.first(where: { $0.id == id }), !note.dirty, let path = note.path else { return }
@@ -474,7 +494,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     func textViewDidChangeSelection(_ notification: Notification) {
         // Avoid an O(file size) line count on every keystroke in large files.
-        if richEditing { position.stringValue = "Media note"; return }
+        if richEditing { position.stringValue = "Live note"; return }
         if previewing { position.stringValue = "Preview"; return }
         let location = editor.selectedRange().location
         if location > 200_000 { position.stringValue = "Position \(location.formatted())"; return }
@@ -530,7 +550,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         largerButton?.isEnabled = size < maximumDisplayedSize
         viewportChanged()
     }
-    @objc func newNote() { guard flushRecovery() else { return }; let note = Note(); notes.insert(note, at: 0); reloadShelf(); select(note.id, focusContent: true); persistCurrent(); showWindow(nil) }
+    @objc func newNote() { guard flushRecovery() else { return }; let note = Note(language: "Markdown"); notes.insert(note, at: 0); reloadShelf(); select(note.id, focusContent: true); persistCurrent(); showWindow(nil) }
     func insertEmbed(_ snippet: String) {
         editor.insertText(snippet, replacementRange: editor.selectedRange())
         mediaView.queueStyleMenu(for: snippet)
@@ -566,7 +586,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
                         let length = (self.editor.string as NSString).length
                         let insertion = min(sourceRange.location, length)
                         self.editor.insertText(snippet, replacementRange: NSRange(location: insertion, length: min(sourceRange.length, length - insertion)))
-                        self.richEditing = true; self.updatePreview(); self.focusContent()
+                        self.richEditing = self.notes[row].language != "Plain Text"; self.updatePreview(); self.focusContent()
                     } else {
                         var note = self.notes[row]; note.text += snippet; note.modified = Date(); note.dirty = true
                         self.notes[row] = note
@@ -638,7 +658,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             notes[index].path = url.path; notes[index].dirty = false
             notes[index].diskModified = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             notes[index].language = Note.language(for: url); language.selectItem(withTitle: notes[index].language)
-            highlighter.configure(notes[index].language); flushRecovery(); reloadShelf(); updateHeader(); viewportChanged()
+            highlighter.configure(sourceLanguage); flushRecovery(); reloadShelf(); updateHeader(); viewportChanged()
         } catch { showError(error) }
     }
     @objc func applyPreferences() {
@@ -705,12 +725,14 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     }
     @objc func changeLanguage() {
         guard let index else { return }; notes[index].language = language.titleOfSelectedItem ?? "Plain Text"
-        highlighter.configure(notes[index].language)
+        richEditing = supportsLiveEditing(notes[index])
+        highlighter.configure(sourceLanguage)
         editor.textStorage?.addAttribute(.foregroundColor, value: Theme.text, range: NSRange(location: 0, length: editor.textStorage?.length ?? 0))
         updatePreview(); viewportChanged(); scheduleRecovery(); reloadShelf()
     }
     func focusContent() {
         window?.makeFirstResponder(richEditing ? mediaView : (previewing ? markdownPreview : editor))
+        if richEditing { mediaView.focusEditor() }
     }
     private var canFormatMarkdown: Bool {
         index.map { notes[$0].language == "Markdown" } == true && !previewing && !richEditing && window?.firstResponder === editor
@@ -727,7 +749,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     @objc func toggleMarkdownPreview() {
         guard let index else { return }
         splitPreviewing = false
-        if NoteEmbeds.hasContent(notes[index].text) || richEditing { richEditing.toggle(); previewing = false }
+        if supportsLiveEditing(notes[index]) || richEditing { richEditing.toggle(); previewing = false }
         else if notes[index].language == "Markdown" { previewing.toggle() }
         else { return }
         updatePreview()
@@ -735,7 +757,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         focusContent()
     }
     private func updatePreview() {
-        editor.formatsLists = index.map { ["Plain Text", "Markdown"].contains(notes[$0].language) } ?? true
+        editor.formatsLists = false
         let isMarkdown = index.map { notes[$0].language == "Markdown" } ?? false
         if !isMarkdown { previewing = false; splitPreviewing = false }
         splitButton?.isHidden = !isMarkdown
@@ -749,15 +771,15 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         if editor.textContainerInset.width != editorInset {
             editor.textContainerInset.width = editorInset
         }
-        let hasMedia = index.map { NoteEmbeds.hasContent(notes[$0].text) } ?? false
-        previewButton?.isHidden = !isMarkdown && !hasMedia && !richEditing
+        let hasLiveEditor = index.map { supportsLiveEditing(notes[$0]) } ?? false
+        previewButton?.isHidden = !isMarkdown && !hasLiveEditor && !richEditing
         previewButton?.title = previewing ? "Edit" : "Preview"
         previewButton?.state = previewing ? .on : .off
         let help = previewing ? "Edit Markdown (⌘⇧M)" : "Preview Markdown (⌘⇧M)"
         previewButton?.toolTip = help; previewButton?.setAccessibilityLabel(help)
-        if hasMedia || richEditing {
+        if hasLiveEditor || richEditing {
             previewButton?.title = richEditing ? "Source" : "Live View"
-            previewButton?.toolTip = richEditing ? "Edit note source (⌘⇧M)" : "Show media and embeds (⌘⇧M)"
+            previewButton?.toolTip = richEditing ? "Edit note source (⌘⇧M)" : "Edit live note (⌘⇧M)"
             previewButton?.setAccessibilityLabel(previewButton?.toolTip)
         }
         scroll.isHidden = previewing || richEditing
@@ -792,12 +814,12 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             editor.undoManager?.removeAllActions()
             editor.setSelectedRange(NSRange(location: min(selection.location, (editor.string as NSString).length), length: 0))
             language.selectItem(withTitle: notes[index].language)
-            highlighter.configure(notes[index].language)
+            highlighter.configure(sourceLanguage)
             updateFont()
         }
         if let index {
             language.selectItem(withTitle: notes[index].language)
-            highlighter.configure(notes[index].language)
+            highlighter.configure(sourceLanguage)
         }
         reloadShelf(); updateHeader()
     }
@@ -871,7 +893,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         var remaining = notes
         remaining.remove(at: removedIndex)
         if removedSelection { selectedID = nil }
-        notes = remaining.isEmpty ? [Note()] : remaining
+        notes = remaining.isEmpty ? [Note(language: "Markdown")] : remaining
         reloadShelf()
         if removedSelection { select(notes[min(removedIndex, notes.count - 1)].id) }
         return flushRecovery()
@@ -896,7 +918,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         }
         if item.action == #selector(toggleMarkdownPreview) {
             item.state = previewing ? .on : .off
-            return index.map { notes[$0].language == "Markdown" || NoteEmbeds.hasContent(notes[$0].text) || richEditing } ?? false
+            return index.map { notes[$0].language == "Markdown" || supportsLiveEditing(notes[$0]) || richEditing } ?? false
         }
         if item.action == #selector(togglePresentation) { item.state = presenting ? .on : .off }
         if item.action == #selector(toggleSidebar) { item.state = !sidebar.isHidden ? .on : .off }
