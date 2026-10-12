@@ -2,6 +2,7 @@
 
 ## 0.13.1 — 2026-10-11
 
+- Up and Down arrows now stop on empty lines instead of skipping to the next paragraph.
 - Clicking below a live note now reliably shows the caret at the document’s end, including freshly typed text and empty final lines.
 - The live editor uses a clearer mint bar caret with a one-second blink.
 

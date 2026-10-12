@@ -45,6 +45,61 @@ final class BlankEditorClickTests: XCTestCase {
         try await Task.sleep(nanoseconds: 20_000_000)
     }
 
+    @MainActor func testDownArrowVisitsBlankLineAfterList() async throws {
+        let original = "Updates:\n- Tokyo\n- Kyoto\n- Filipino dish\n\nI have feedback on world settings, let's open up a preview link for me to start commenting on."
+        let workspace = try await liveWorkspace(original)
+        let view = workspace.mediaView
+        _ = try await view.callAsyncJavaScript("""
+            const block=document.querySelector('.text');block.style.width='500px';block.focus();
+            const body=block.querySelectorAll('.list-marker')[2].nextSibling;
+            const end=document.createRange();end.setStart(body,body.length);end.collapse(true);
+            getSelection().removeAllRanges();getSelection().addRange(end);
+            """, in: nil, contentWorld: .page)
+        try await typeKey("\u{F701}", keyCode: 125, in: workspace)
+        let result = try await view.callAsyncJavaScript("""
+            const block=document.querySelector('.text'),selection=getSelection();
+            const node=selection.anchorNode,row=(node.nodeType===Node.ELEMENT_NODE?node:node.parentElement).closest('div,p');
+            updateTextCaret();return [row===block.children[4],!document.getElementById('text-caret').hidden,source(),row.outerHTML];
+            """, in: nil, contentWorld: .page) as? [Any]
+        XCTAssertEqual(result?[0] as? Bool, true, "Down must visit the empty paragraph before the following text: \(result ?? [])")
+        XCTAssertEqual(result?[1] as? Bool, true)
+        XCTAssertEqual(result?[2] as? String, original)
+        try await typeKey("!", keyCode: 18, in: workspace)
+        let edited = try await view.evaluateJavaScript("source()") as? String
+        XCTAssertEqual(edited, original.replacingOccurrences(of: "\n\nI have", with: "\n!\nI have"))
+    }
+
+    @MainActor func testArrowKeysVisitBlankParagraphsInBothDirections() async throws {
+        for emptyLines in [1, 2] {
+            let original = "A" + String(repeating: "\n", count: emptyLines + 1) + "B"
+            let workspace = try await liveWorkspace(original)
+            let view = workspace.mediaView
+            _ = try await view.callAsyncJavaScript("""
+                const block=document.querySelector('.text');block.focus();
+                const end=document.createRange();end.selectNodeContents(block.firstElementChild);end.collapse(false);
+                getSelection().removeAllRanges();getSelection().addRange(end);
+                """, in: nil, contentWorld: .page)
+            for index in 1...emptyLines + 1 {
+                try await typeKey("\u{F701}", keyCode: 125, in: workspace)
+                let row = try await view.callAsyncJavaScript("""
+                    const block=document.querySelector('.text'),node=getSelection().anchorNode;
+                    return [...block.children].indexOf((node.nodeType===Node.ELEMENT_NODE?node:node.parentElement).closest('div,p'));
+                    """, in: nil, contentWorld: .page) as? Int
+                XCTAssertEqual(row, index, "Down must stop at each empty row")
+            }
+            for index in (0...emptyLines).reversed() {
+                try await typeKey("\u{F700}", keyCode: 126, in: workspace)
+                let row = try await view.callAsyncJavaScript("""
+                    const block=document.querySelector('.text'),node=getSelection().anchorNode;
+                    return [...block.children].indexOf((node.nodeType===Node.ELEMENT_NODE?node:node.parentElement).closest('div,p'));
+                    """, in: nil, contentWorld: .page) as? Int
+                XCTAssertEqual(row, index, "Up must stop at each empty row")
+            }
+            let unchanged = try await view.evaluateJavaScript("source()") as? String
+            XCTAssertEqual(unchanged, original)
+        }
+    }
+
     @MainActor func testNativeBlankClickBelowLoadedWrappedList() async throws {
         let original = "Help\n- Build a large Safari Park Zoo\n- Build a natural history museum\n- Build a art museum featuring real art from sculpture to paintings that are legal to display"
         let workspace = try await liveWorkspace(original)

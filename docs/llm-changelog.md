@@ -2,17 +2,32 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+
+## 2026-10-11 — Follow-up correction: arrow keys stop on blank lines
+
+**Request:** From the end of “Filipino dish,” Down skipped the empty line and landed after “I have feedbac” in the following paragraph. This arrived while 0.13.1 was building.
+
+**Diagnosis:** A loaded screenshot-layout fixture with native AppKit Down and subsequent typing reproduced that exact offset and inserted punctuation into “feedback,” failing two assertions (`/tmp/luna-arrow-empty-red.log`). Removing the list and reducing to `A\n\nB` still skipped the blank line, and two consecutive empty rows failed in both directions (`/tmp/luna-arrow-empty-minimal-red.log`). The blanket terminal-BR `display:none` rule left visual min-height but removed WebKit’s editable caret stop. Keeping the first BR visible makes both tests pass without any keyboard interception or selection normalization change. Earlier caret geometry tests selected empty rows directly and therefore did not exercise native vertical navigation.
+
+**Implementation:** Empty native paragraphs keep their BR in layout; redundant trailing BRs after earlier child elements remain hidden. WebKit handles Up/Down, preferred horizontal position, and selection normally. Original source, native Undo, mint styling, and the document-end click correction remain intact.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/BlankEditorClickTests.swift`, `docs/editor-debugging.md`, `CHANGELOG.md`, `docs/llm-changelog.md`.
+
+**Verification:** Both native regressions pass, including source preservation and insertion on the intended empty line. All **157 Swift tests** (142 Luna, 15 LunaCore) and all four release-tool tests passed, plus version-order/note checks, regular packaging, strict nested signature verification, and `git diff --check`. Opened current-worktree regular 0.13.1 build **20261012040944**, UUID **14A4C723-D0DC-30C6-977D-706E37A8E0FC** matching `.build/release/Luna`, with no development flag/footer ID. Native selection at the end of the actual user’s “Filipino dish” followed by Down visibly put the mint caret on the immediately following empty line. All four latest note ID/text/language fingerprints remain intact; no user-note text was edited. Final local logs: `/tmp/luna-0131-corrected-swift-tests.log`, `/tmp/luna-0131-corrected-release-tests.log`, `/tmp/luna-0131-corrected-build.log`. Corrected publication/installed-update verification pending.
+
+**Release follow-up / status:** Cancelled unpublished release run **38202117071** while it was in Swift tests; packaging, artifact upload, and publication had not started. Confirmed cancelled conclusion and no v0.13.1 GitHub release. The existing annotated tag object **5db2e63438563ea33cc23f0f3a066a274c398351** will be replaced only under that explicit lease after the correction is verified. No published archive or feed is replaced. This correction is being included in the already-authorized 0.13.1 deployment.
+
 ## 2026-10-11 — Luna 0.13.1 release
 
 **Request:** Ship the approved document-end caret fix and Sora-style mint caret after user testing.
 
-**Implementation:** Version 0.13.1 groups the geometry correction, native-click/typing regression coverage, and mint bar style documented below. Added two user-facing highlights in `CHANGELOG.md` and updated bundle marketing metadata. Regular builds retain blinking and omit development footer IDs. Unrelated untracked notes and icon-design assets are excluded from the release.
+**Implementation:** Version 0.13.1 groups the geometry correction, native-click/typing and blank-line arrow-navigation regression coverage, and mint bar style documented below. Added three user-facing highlights in `CHANGELOG.md` and updated bundle marketing metadata. Regular builds retain blinking and omit development footer IDs. Unrelated untracked notes and icon-design assets are excluded from the release.
 
 **Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/BlankEditorClickTests.swift`, `Resources/Info.plist`, `CHANGELOG.md`, `docs/llm-changelog.md`.
 
 **Local verification:** All **155 Swift tests** (140 Luna, 15 LunaCore) and all four release-tool tests passed, along with version-order validation, exact release-note extraction, regular packaging, strict nested signature verification, and `git diff --check`. Opened current-worktree regular 0.13.1 build **20261012035907**, executable UUID **236DA336-9481-3F07-B534-D073FAEBADA1** matching `.build/release/Luna`. Native clicking below Help visibly shows the mint caret at the saved document end. No development flag or footer ID, no older Luna copy running, and all four latest user-note ID/text/language fingerprints preserved through relaunch. Logs: `/tmp/luna-0131-swift-tests.log`, `/tmp/luna-0131-release-tests.log`, `/tmp/luna-0131-build.log`. The user confirmed both the document-end fix and new caret style in the prior reviewed builds.
 
-**Release status:** Preparing v0.13.1; publication and installed-update verification pending.
+**Release status:** Initial unpublished run cancelled for the new blank-line arrow-navigation correction above. Corrected publication and installed-update verification pending.
 
 ## 2026-10-11 — Try Sora’s mint bar caret in Luna
 

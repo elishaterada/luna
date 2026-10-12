@@ -1163,7 +1163,9 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         body {box-sizing:border-box;min-height:100vh;margin:0;padding:24px 40px 80px;color:\(dark ? "#cccccc" : "#242833");font:\(fontSize)px/1.8 -apple-system,BlinkMacSystemFont,sans-serif;}
         article {max-width:72ch;margin:0;} .text {white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.8em;outline:none;}
         .text,.text div,.text p {text-align:left !important;}
-        .text div,.text p {min-height:1.8em;margin:0;} .text div > br:last-child,.text p > br:last-child {display:none;}
+        .text div,.text p {min-height:1.8em;margin:0;}
+        /* Empty rows need their BR in layout for native Up/Down caret stops. */
+        .text div > br:last-child:not(:first-child),.text p > br:last-child:not(:first-child) {display:none;}
         .text,.text div,.text p {box-sizing:border-box;padding-left:var(--list-indent,0px);}
         .text div,.text p {--list-indent:0px;}
         .text > div,.text > p {margin-left:calc(-1 * var(--list-indent-parent,0px));}
