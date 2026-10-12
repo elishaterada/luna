@@ -105,8 +105,19 @@ final class EditorBehaviorTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         try send("\r", 36)
-        try await Task.sleep(nanoseconds: 100_000_000)
-        _ = try await view.evaluateJavaScript("document.execCommand('insertText',false,'Build another museum with a sufficiently long description to wrap across multiple lines and remain aligned');")
+        let body = "Build another museum with a sufficiently long description to wrap across multiple lines and remain aligned"
+        var inserted = false
+        for _ in 0..<100 {
+            // Native keys reach WebKit asynchronously. Insert in the same JS
+            // turn that confirms Return's source and caret, without moving it.
+            inserted = (try await view.callAsyncJavaScript("""
+                if(source()!=='- First museum\\n- '||currentLine()?.prefix!=='- ')return false;
+                document.execCommand('insertText',false,body);return true;
+                """, arguments: ["body": body], in: nil, contentWorld: .page) as? Bool) == true
+            if inserted { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(inserted, "Native Return must finish on the continued item's body before typing")
         try send("\t", 48)
         try await Task.sleep(nanoseconds: 50_000_000)
         let result = try await view.evaluateJavaScript("""
