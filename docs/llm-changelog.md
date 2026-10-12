@@ -2,6 +2,57 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-10-11 — Luna 0.13.1 release
+
+**Request:** Ship the approved document-end caret fix and Sora-style mint caret after user testing.
+
+**Implementation:** Version 0.13.1 groups the geometry correction, native-click/typing regression coverage, and mint bar style documented below. Added two user-facing highlights in `CHANGELOG.md` and updated bundle marketing metadata. Regular builds retain blinking and omit development footer IDs. Unrelated untracked notes and icon-design assets are excluded from the release.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/BlankEditorClickTests.swift`, `Resources/Info.plist`, `CHANGELOG.md`, `docs/llm-changelog.md`.
+
+**Local verification:** All **155 Swift tests** (140 Luna, 15 LunaCore) and all four release-tool tests passed, along with version-order validation, exact release-note extraction, regular packaging, strict nested signature verification, and `git diff --check`. Opened current-worktree regular 0.13.1 build **20261012035907**, executable UUID **236DA336-9481-3F07-B534-D073FAEBADA1** matching `.build/release/Luna`. Native clicking below Help visibly shows the mint caret at the saved document end. No development flag or footer ID, no older Luna copy running, and all four latest user-note ID/text/language fingerprints preserved through relaunch. Logs: `/tmp/luna-0131-swift-tests.log`, `/tmp/luna-0131-release-tests.log`, `/tmp/luna-0131-build.log`. The user confirmed both the document-end fix and new caret style in the prior reviewed builds.
+
+**Release status:** Preparing v0.13.1; publication and installed-update verification pending.
+
+## 2026-10-11 — Try Sora’s mint bar caret in Luna
+
+**Request:** The restored blink works; try the caret style used in the user's Sora app.
+
+**Reference / implementation:** Inspected the installed Sora prompt and read the local Sora `StickyPromptBar.swift`, `sora.ghostty`, and `TerminalPreferences.swift` as references. The prompt uses a 1.5-point accent bar and a one-second opacity cycle (visible through 49%, off by 50%); its terminal and light appearance use mint `#19f9d8` / `#00796b`. Luna’s live editor now draws a 1.5-pixel mint bar with the same blink timing. Existing text-height geometry, the blank-area click correction, selection, native typing, composition fallback, development steady-caret mode, and reduced-motion handling remain intact. Luna’s native Source editor already uses `Theme.mint`; native dimensions and blink remain OS-managed. No Sora source or settings were changed.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `docs/llm-changelog.md`.
+
+**Verification:** All **155 Swift tests** passed (140 Luna, 15 LunaCore), including existing caret geometry, native typing, selection, focus, and blank-click coverage. Regular packaging, strict nested signature verification, and `git diff --check` passed. Opened current-worktree `dist/Luna.app`, `CFBundleVersion` **20261012035327**, executable UUID **236DA336-9481-3F07-B534-D073FAEBADA1** matching `.build/release/Luna`. Native background clicking in the existing Help note visibly shows the new mint bar at the saved document end. The regular bundle has no development flag, and its footer omits the build ID. Left Help focused for the user to compare blinking; static screenshots confirm the style and geometry, while the blink timing follows the inspected Sora keyframe values. All four latest user-note ID/text/language fingerprints match through relaunch, including the user’s recent empty list item. No user-note text was edited, and no older Luna copy is running. Removed the private backup after preservation was confirmed. Logs: `/tmp/luna-sora-caret-tests.log`, `/tmp/luna-sora-caret-build.log`. No new CSS-mirroring tests were added; existing caret geometry, typing, selection, blur, and blank-click regressions exercise the affected editor. Impeccable's detector reported only existing hidden bookmark-preview/favicon images whose URLs are populated asynchronously; neither finding involves the caret change.
+
+**Limitations / release status:** Local style trial for user review; not committed, pushed, or published. Styling is adapted to Luna’s prose geometry rather than Sora’s terminal cell metrics.
+
+## 2026-10-11 — Regular build for blinking-caret review
+
+**Request:** The document-end click fix works, but the caret no longer blinks.
+
+**Diagnosis / resulting behavior:** The handoff used a development bundle (`LunaDevelopmentBuild=true`), which deliberately disables blinking for caret geometry debugging, as recorded in the earlier caret entry. Repackaged the current worktree with `LUNA_DEVELOPMENT_BUILD=0` to use the existing normal `caret-blink` animation and omit the development footer. No editor source behavior changed; the document-end geometry correction remains included. Reduced-motion handling retains its existing semantics.
+
+**Files / verification:** `Scripts/build.sh` used to generate `dist/Luna.app`; packaged `Contents/Info.plist` has no development flag. `docs/llm-changelog.md` records this handoff. Build **20261012034459** passed packaging and strict nested signature verification. Running bundle executable UUID **7CED66AC-05F4-375A-8C36-DA0C66CE8C54** matches `.build/release/Luna`. Opened and raised this worktree’s regular bundle, left Help focused at its saved document end, and confirmed the footer omits the build ID. Existing source explicitly enables the 1-second blinking animation for this bundle configuration. Static screenshots verified document-end placement and footer removal; they did not independently establish a full blink cycle. All four latest user-note ID/text/language fingerprints match through relaunch; removed the private backup after confirmation. Only the current worktree bundle is running; no older Luna copy remains. Prior 155 Swift/four release-tool checks remain applicable because no runtime source changed. Build log: `/tmp/luna-blinking-caret-build.log`.
+
+**Release status:** Local regular build for user review; not published.
+
+## 2026-10-11 — Follow-up correction: document-end caret after blank-area clicks
+
+**Request:** Clicking below the document no longer visibly places the caret at the end of the last line.
+
+**Diagnosis:** Native clicks in the installed 0.13.0 build **20261011212756** reproduced the invisible caret on the user's edited Help note. The existing September blank-click test and a freshly loaded wrapped-list/native-click fixture passed. A minimal `Before` / newly typed `Tail` fixture creates `<div>Before</div><div>Tail<br></div>`: the click correctly collapses selection at the document end and typing appends, but the custom caret measures the terminal hidden BR and cannot paint. Native Return/letter/click events plus explicit visibility and glyph-edge assertions reproduce this failure on the original source. An early `NSWindow.sendEvent` mouse probe did not deliver DOM mouse events; corrected the test to dispatch native mouse events through the actual WKWebView, and discarded that harness failure as diagnosis evidence.
+
+**Implementation:** At element-boundary selections, the caret's cloned geometry range descends through paragraph and inline content, skips a terminal placeholder BR when there is preceding content, and resolves an empty terminal row to its own line box. The live editing selection and source remain unchanged. This corrects the caret-rendering follow-up to the wrapped-paragraph implementation; the background-click selection handler itself remains valid.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/BlankEditorClickTests.swift`, `docs/llm-changelog.md`.
+
+**Verification:** Six focused blank-click tests pass, including loaded wrapped lists, native Return/per-character typing/clicking and immediate native append, styled terminal text, consecutive empty paragraphs, selection preservation, exact source, and Source hit testing. The final native regression was also rerun with the implementation correction temporarily removed to confirm it remains red-capable. Initial full suite passed all 154 Swift tests (139 Luna, 15 LunaCore), and all four release-tool tests passed. Development packaging and strict signature checks passed for build **20261012032145**, executable UUID **7CED66AC-05F4-375A-8C36-DA0C66CE8C54** matching `.build/release/Luna`. Native app review confirmed newly typed paragraphs and the screenshot’s freshly typed wrapped list show the end caret after a background click and append punctuation on the last line. Added a native per-character list continuation regression; final full suite passed all **155 Swift tests** (140 Luna, 15 LunaCore). Final development packaging, strict signature verification, and `git diff --check` passed. Logs: `/tmp/luna-bottom-click-native-confirmed-red.log`, `/tmp/luna-bottom-click-final-focused.log`, `/tmp/luna-bottom-click-final-suite.log`, `/tmp/luna-bottom-click-release-tests.log`, `/tmp/luna-bottom-click-final-build.log`.
+
+**Final opened build / preservation:** Left the user’s existing Help note open in current-worktree `dist/Luna.app`, `CFBundleVersion` **20261012032832**, with matching development footer and executable UUID **7CED66AC-05F4-375A-8C36-DA0C66CE8C54** matching `.build/release/Luna`. Native background clicking visibly placed the caret at the saved document end, including its existing trailing blank lines. Removed exactly the two tracked disposable notes after verifying their contents and gracefully quitting. All four protected user-note ID/text/language fingerprints match before and after final relaunch; no user note text was edited. No older Luna copy is running. Removed the private backup only after preservation was confirmed.
+
+**Review follow-up correction:** Reusing the disposable paragraph note via Select All/replacement left a pre-existing empty final paragraph. Clicking and typing correctly used that final row; it was not a new background-click/list-placement defect. Confirmed the distinction with a fresh note matching the screenshot, whose caret stayed after “display” and typing produced “display!”. No selection-handler or source-trimming change was made. Native key fixtures wait briefly between letters so queued events cannot leak across selection/click steps.
+
+**Limitations / release status:** Local implementation only; not committed, pushed, or published. No release requested. Tests cover plain/styled text, list layout, and empty paragraphs; arbitrary non-text inline elements retain WebKit's native editing semantics.
 
 ## 2026-10-11 — Luna 0.13.0 release
 

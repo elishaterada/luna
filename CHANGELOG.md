@@ -1,5 +1,10 @@
 # Luna release notes
 
+## 0.13.1 — 2026-10-11
+
+- Clicking below a live note now reliably shows the caret at the document’s end, including freshly typed text and empty final lines.
+- The live editor uses a clearer mint bar caret with a one-second blink.
+
 ## 0.13.0 — 2026-10-11
 
 - Wrapped bullets and numbered items stay aligned with their text, including nested lists.

@@ -1172,8 +1172,8 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
         .list-marker:empty {display:none;}
         .bullet-marker {--bullet-scale:1.45;font-size:calc(1em * var(--bullet-scale));width:calc(1.25em / var(--bullet-scale));margin-right:calc(.25em / var(--bullet-scale));line-height:0;text-align:center;}
         .text {caret-color:transparent;} body.composing .text {caret-color:auto;}
-        #text-caret {position:fixed;width:1px;background:currentColor;pointer-events:none;z-index:2;animation:\(steadyCaret ? "none" : "caret-blink 1s step-end infinite");}
-        #text-caret[hidden] {display:none;} @keyframes caret-blink {50% {opacity:0;}}
+        #text-caret {position:fixed;width:1.5px;background:\(dark ? "#19f9d8" : "#00796b");pointer-events:none;z-index:2;animation:\(steadyCaret ? "none" : "caret-blink 1s linear infinite");}
+        #text-caret[hidden] {display:none;} @keyframes caret-blink {0%,49% {opacity:1;} 50%,100% {opacity:0;}}
         #caret-guide {position:fixed;top:0;bottom:0;border-left:1px dashed #f7a65c;pointer-events:none;z-index:1;}
         #caret-readout {position:fixed;bottom:8px;left:40px;font:11px/1.4 monospace;background:#242833;color:#fff;padding:3px 6px;pointer-events:none;z-index:3;}
         @media (prefers-reduced-motion:reduce) {#text-caret {animation:none;}}
@@ -1260,7 +1260,17 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
           const range=selection.getRangeAt(0).cloneRange();
           if(node.nodeType===Node.ELEMENT_NODE) {
             let before=node.childNodes[selection.anchorOffset-1];
-            while(before?.nodeType===Node.ELEMENT_NODE&&before.matches('div,p'))before=before.lastChild;
+            // Native typing leaves a terminal BR placeholder in the last row.
+            // Measure the preceding content (including inline styles) instead
+            // of the hidden BR, while retaining the actual editing selection.
+            while(before?.nodeType===Node.ELEMENT_NODE) {
+              if(before.nodeName==='BR') {
+                if(before===before.parentNode.lastChild&&before.previousSibling){before=before.previousSibling;continue;}
+                range.setStartBefore(before);range.collapse(true);break;
+              }
+              if(!before.lastChild){range.selectNodeContents(before);range.collapse(false);break;}
+              before=before.lastChild;
+            }
             if(before?.nodeType===Node.TEXT_NODE){range.setStart(before,before.textContent.length);range.collapse(true);}
           }
           // WebKit may split a glyph's advance between the visible letter and a
@@ -1274,7 +1284,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
           }
           let rect=range.getBoundingClientRect();const style=getComputedStyle(block),height=parseFloat(style.fontSize);
           if(!rect.height) {
-            const element=node.nodeType===Node.ELEMENT_NODE?node:node.parentElement;
+            const element=range.startContainer.nodeType===Node.ELEMENT_NODE?range.startContainer:range.startContainer.parentElement;
             const row=element?.closest('div,p');
             if(row?.closest('.text')===block&&row.textContent.replace(/\\u200B/g,'')==='') {
               const bounds=row.getBoundingClientRect();rect={left:bounds.left,top:bounds.top,height:parseFloat(style.lineHeight)};
