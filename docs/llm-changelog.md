@@ -2,6 +2,32 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-10-14 — Luna 0.13.2 release
+
+**Request:** Ship the approved ⌘⇧V plain-text paste feature.
+
+**Implementation:** Version 0.13.2 packages the plain-paste command, focused editor/field routing, and five regressions documented below. Updated bundle marketing metadata and promoted the user-facing highlight in `CHANGELOG.md`. Regular builds omit the development footer ID. Unrelated untracked notes and icon assets are excluded.
+
+**Files:** `Resources/Info.plist`, `CHANGELOG.md`, `Sources/Luna/main.swift`, `Workspace.swift`, `EditorView.swift`, `MediaNoteView.swift`, `CommandLineSettings.swift`, `Tests/LunaTests/PlainTextPasteTests.swift`, and this log.
+
+**Local verification:** All **162 Swift tests** (147 Luna, 15 LunaCore), four release-tool checks, version-order and exact-note validation, and `git diff --check` passed. Regular packaging and strict nested signature verification passed. Opened this worktree's regular 0.13.2 candidate **20261014212426**, confirmed its menu contains Paste as Plain Text and its footer omits the development build ID. The executable matches `.build/release/Luna`; only the current-worktree copy is running. All four latest fully flushed user-note ID/text/language fingerprints match the protected baseline. Actual native shortcut behavior was approved in the development build described below. Logs: `/tmp/luna-0132-swift-tests.log`, `/tmp/luna-0132-release-tests.log`, `/tmp/luna-0132-build.log`.
+
+**Release status:** Publication, public-download checks, and installed Sparkle update verification pending.
+
+## 2026-10-14 — Plain text paste with Command–Shift–V
+
+**Request:** Support plain text paste using ⌘⇧V.
+
+**Implementation:** Added Edit → Paste as Plain Text and its shortcut to Settings. The application routes the command to the active workspace and focused editing surface, including Live View's link fields. Native editors insert the clipboard string through their normal selection/Undo path, bypassing URL-to-embed conversion. Live View inserts text through existing native WebKit editing transactions without the URL/iframe paste conversion or display menu. Clipboard HTML is ignored. Whole-note replacement retains bookmark/media Undo behavior; source/recovery preserve the literal pasted text. Regular ⌘V keeps its existing behavior.
+
+**Follow-up correction:** The first focused tests exposed whole-note selection collapsing when the new path focused the first text block before replacement. Whole-note replacement now runs before focus restoration. The initial attached-main-menu test harness consumed keyboard equivalents without dispatching the action; tests now extract the actual application menu item into a detached menu, matching existing shortcut test seams.
+
+**Files:** `Sources/Luna/main.swift`, `Workspace.swift`, `EditorView.swift`, `MediaNoteView.swift`, `CommandLineSettings.swift`, `Tests/LunaTests/PlainTextPasteTests.swift`, `CHANGELOG.md`, and this log.
+
+**Verification:** Five focused regressions pass for the actual menu shortcut, rich clipboard/plain-string selection replacement in Plain Text/Markdown Source/code, multiline URL/iframe/Unicode text, Live View selection and whole-note bookmark replacement, Undo/Redo, recovery, focused link fields, and paste immediately after New Note. Final full suite passed all **162 Swift tests** (147 Luna, 15 LunaCore); all four release-tool checks and `git diff --check` passed. Development packaging and strict nested signature verification passed. Opened this worktree's `dist/Luna.app`, build **20261014211429**, with its footer matching `CFBundleVersion`; executable UUID **7D277134-A811-31F4-8A53-6ABFAA4F1E7D** matches `.build/release/Luna`. Only this worktree copy is running; the older `/Applications/Luna.app` was gracefully quit. Actual native ⌘⇧V pasted a copied URL literally into Live View without a rich link or display menu; Source displayed the exact URL, and Source selection replacement with the shortcut also worked. Removed only the disposable review note and returned to the user's Updates note. All four latest saved user-note ID/text/language fingerprints match the protected baseline after relaunch and cleanup. Logs: `/tmp/luna-plain-paste-suite-final.log`, `/tmp/luna-plain-paste-release-tests.log`, `/tmp/luna-plain-paste-build-final.log`.
+
+**Limitations / release status:** Local development build for review; not published. Plain paste uses Luna's existing list editing and destination typing style; it does not change the note's language or Live View formatting model. Clipboard content without a plain-string representation is ignored. A loading Live View gets the same bounded five-second wait used for snippet insertion; switching pages or leaving Live View cancels the pending paste.
+
 
 ## 2026-10-11 — Luna 0.13.1 release
 

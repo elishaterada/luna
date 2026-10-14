@@ -247,6 +247,7 @@ private struct LunaSettingsView: View {
             LabeledContent("Save", value: "⌘S")
             LabeledContent("Save as file", value: "⇧⌘S")
             LabeledContent("Find and replace", value: "⌘F")
+            LabeledContent("Paste as plain text", value: "⇧⌘V")
         }
         Section("Workspace") {
             LabeledContent("Show or hide notes", value: "⌥⌘S")

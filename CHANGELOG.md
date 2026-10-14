@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.13.2 — 2026-10-14
+
+- Press ⌘⇧V to paste plain text without converting URLs into rich links. Available in Live View, Source, and Plain Text.
+
 ## 0.13.1 — 2026-10-11
 
 - Up and Down arrows now stop on empty lines instead of skipping to the next paragraph.

@@ -566,6 +566,12 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         else if focusedView === editor || focusedView?.isDescendant(of: editor) == true { editor.selectAll(sender) }
         else { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: window?.firstResponder, from: sender) }
     }
+    @objc func pastePlainText(_ sender: Any?) {
+        let focusedView = window?.firstResponder as? NSView
+        if richEditing && !mediaView.isHidden &&
+            (focusedView === mediaView || focusedView?.isDescendant(of: mediaView) == true) { mediaView.pasteAsPlainText(sender) }
+        else { NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: window?.firstResponder, from: sender) }
+    }
     func importMedia(_ urls: [URL], range: NSRange? = nil) {
         guard let id = selectedID else { return }
         let sourceRange = range ?? editor.selectedRange()

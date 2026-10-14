@@ -134,6 +134,28 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     func selectAllNote() {
         Task { _ = try? await callAsyncJavaScript("selectAllNote()", in: nil, contentWorld: .page) }
     }
+    @objc func pasteAsPlainText(_ sender: Any?) {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        let currentPage = pageID
+        Task {
+            for _ in 0..<100 {
+                guard pageID == currentPage, !isHidden else { return }
+                if readyPageID == currentPage, !isLoading {
+                    _ = try? await callAsyncJavaScript("""
+                        if (page !== expectedPage) return false;
+                        if (document.activeElement?.matches('input,textarea')) {
+                            return document.execCommand('insertText', false, text);
+                        }
+                        if (replaceWholeNote(text)) return true;
+                        if (!focusTextEditor()) return false;
+                        insertListText(text); post('input'); return true;
+                        """, arguments: ["expectedPage": currentPage, "text": text], in: nil, contentWorld: .page)
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+    }
     func formatSelection(_ command: String) {
         Task { _ = try? await callAsyncJavaScript("""
             const selection=getSelection();

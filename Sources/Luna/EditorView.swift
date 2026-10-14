@@ -203,6 +203,10 @@ final class EditorView: NSTextView {
     }
     var onFileDrop: (([URL]) -> Void)?
     var onEmbedPaste: ((String) -> Void)?
+    override func pasteAsPlainText(_ sender: Any?) {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        insertText(text, replacementRange: selectedRange())
+    }
     override func paste(_ sender: Any?) {
         if formatsLists, let value = NSPasteboard.general.string(forType: .string),
            let snippet = URLPasteChoice.linkedSnippet(for: value) {
