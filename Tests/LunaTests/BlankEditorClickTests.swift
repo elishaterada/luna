@@ -45,6 +45,15 @@ final class BlankEditorClickTests: XCTestCase {
         try await Task.sleep(nanoseconds: 20_000_000)
     }
 
+    @MainActor private func waitForSource(_ expected: String, in workspace: Workspace) async throws {
+        for _ in 0..<100 {
+            if (try? await workspace.mediaView.evaluateJavaScript("source()")) as? String == expected { return }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let actual = try await workspace.mediaView.evaluateJavaScript("source()") as? String
+        XCTFail("Native input never reached the expected source: \(String(describing: actual)); expected \(expected)")
+    }
+
     @MainActor func testDownArrowVisitsBlankLineAfterList() async throws {
         let original = "Updates:\n- Tokyo\n- Kyoto\n- Filipino dish\n\nI have feedback on world settings, let's open up a preview link for me to start commenting on."
         let workspace = try await liveWorkspace(original)
@@ -127,7 +136,9 @@ final class BlankEditorClickTests: XCTestCase {
         for (text, code) in [("T", UInt16(17)), ("a", 0), ("i", 34), ("l", 37)] {
             try await typeKey(text, keyCode: code, in: workspace)
         }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // Native WebKit input can arrive after a fixed sleep on a busy runner.
+        // Do not move the selection for the click until all typed text landed.
+        try await waitForSource("Before\nTail", in: workspace)
         try await clickBelowText(workspace)
         let result = try await view.callAsyncJavaScript("""
             updateTextCaret();const visible=!document.getElementById('text-caret').hidden;
@@ -142,7 +153,7 @@ final class BlankEditorClickTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(result?[3] as? Double), try XCTUnwrap(result?[4] as? Double), accuracy: 1)
         XCTAssertEqual(try XCTUnwrap(result?[5] as? Double), try XCTUnwrap(result?[6] as? Double), accuracy: 1)
         try await typeKey("!", keyCode: 18, in: workspace)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForSource("Before\nTail!", in: workspace)
         let edited = try await view.evaluateJavaScript("source()") as? String
         XCTAssertEqual(edited, "Before\nTail!")
     }
@@ -161,6 +172,7 @@ final class BlankEditorClickTests: XCTestCase {
             try await typeKey(String(character), keyCode: 0, in: workspace)
         }
         let original = "Help\n- A\n- B\n- Build a art museum featuring real art from sculpture to paintings that are legal to display"
+        try await waitForSource(original, in: workspace)
         let unchanged = try await workspace.mediaView.evaluateJavaScript("source()") as? String
         XCTAssertEqual(unchanged, original)
         try await clickBelowText(workspace)
@@ -170,6 +182,7 @@ final class BlankEditorClickTests: XCTestCase {
         XCTAssertEqual(caret?[0] as? Bool, true)
         XCTAssertEqual(caret?[1] as? String, original)
         try await typeKey("!", keyCode: 18, in: workspace)
+        try await waitForSource(original + "!", in: workspace)
         let edited = try await workspace.mediaView.evaluateJavaScript("source()") as? String
         XCTAssertEqual(edited, original + "!", "Blank click must append inside the final list item")
     }
