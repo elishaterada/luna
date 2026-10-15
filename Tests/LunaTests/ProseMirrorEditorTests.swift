@@ -30,18 +30,30 @@ final class ProseMirrorEditorTests: XCTestCase {
     }
     @MainActor private func select(_ from: Int, _ workspace: Workspace) async throws { try await select(from, from, workspace) }
     @MainActor private func select(_ from: Int, _ to: Int?, _ workspace: Workspace) async throws {
-        _ = try await js("window.lunaEditor.select(\(from),\(to ?? from));window.lunaEditor.focus();", workspace)
-        workspace.window?.makeFirstResponder(workspace.mediaView)
+        let window = try XCTUnwrap(workspace.window)
+        window.makeKeyAndOrderFront(nil); window.makeFirstResponder(workspace.mediaView)
+        _ = try await js("window.lunaEditor.select(\(from),\(to ?? from));window.lunaEditor.focus();lunaEditor.view.coordsAtPos(lunaEditor.view.state.selection.from);", workspace)
     }
     @MainActor private func key(_ text: String, code: UInt16 = 0, flags: NSEvent.ModifierFlags = [], _ workspace: Workspace) async throws {
         let window = try XCTUnwrap(workspace.window)
         if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
         let focused = window.firstResponder as? NSView
-        if focused !== workspace.mediaView && focused?.isDescendant(of: workspace.mediaView) != true { window.makeFirstResponder(workspace.mediaView) }
+        if focused !== workspace.mediaView && focused?.isDescendant(of: workspace.mediaView) != true {
+            window.makeFirstResponder(workspace.mediaView)
+            _ = try? await js("window.lunaEditor?.focus()", workspace)
+        }
+        let snapshot = "return window.lunaEditor?.view ? JSON.stringify({doc:lunaEditor.view.state.doc.toJSON(),selection:lunaEditor.view.state.selection.toJSON(),marks:lunaEditor.view.state.storedMarks}) : ''"
+        let before = (try? await js(snapshot, workspace)) as? String ?? ""
         window.sendEvent(try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
             characters: text, charactersIgnoringModifiers: text, isARepeat: false, keyCode: code)))
-        try await Task.sleep(nanoseconds: 70_000_000)
+        // NSWindow.sendEvent queues browser work. A fixed delay neither proves
+        // delivery nor preserves ordering on a cold/loaded WindowServer runner.
+        for _ in 0..<200 {
+            if let after = (try? await js(snapshot, workspace)) as? String, after != before { return }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTFail("Native key \(code) did not update document/selection; before: \(before)")
     }
     @MainActor private func waitForModel(_ predicate: String, _ workspace: Workspace) async throws {
         for _ in 0..<200 {
