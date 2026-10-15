@@ -34,11 +34,22 @@ final class ProseMirrorEditorTests: XCTestCase {
         workspace.window?.makeFirstResponder(workspace.mediaView)
     }
     @MainActor private func key(_ text: String, code: UInt16 = 0, flags: NSEvent.ModifierFlags = [], _ workspace: Workspace) async throws {
-        let window = try XCTUnwrap(workspace.window); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(workspace.mediaView)
+        let window = try XCTUnwrap(workspace.window)
+        if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+        let focused = window.firstResponder as? NSView
+        if focused !== workspace.mediaView && focused?.isDescendant(of: workspace.mediaView) != true { window.makeFirstResponder(workspace.mediaView) }
         window.sendEvent(try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
             characters: text, charactersIgnoringModifiers: text, isARepeat: false, keyCode: code)))
         try await Task.sleep(nanoseconds: 70_000_000)
+    }
+    @MainActor private func waitForModel(_ predicate: String, _ workspace: Workspace) async throws {
+        for _ in 0..<200 {
+            if (try await js("return " + predicate, workspace)) as? Bool == true { return }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        let state = try await js("return JSON.stringify(lunaEditor.state)", workspace)
+        XCTFail("Native input did not reach expected model: \(predicate); state: \(String(describing: state))")
     }
     @MainActor private func eventually(_ expected: String, _ workspace: Workspace) async throws {
         for _ in 0..<80 { if workspace.editor.string == expected { break }; try await Task.sleep(nanoseconds: 25_000_000) }
@@ -86,10 +97,21 @@ final class ProseMirrorEditorTests: XCTestCase {
     @MainActor func testNativeNumberedListAndBulletInputRules() async throws {
         let workspace = try await workspace("")
         try await select(1, workspace)
-        for c in "1. test" { try await key(String(c), workspace) }
+        try await key("1", workspace); try await waitForModel("lunaEditor.view.state.doc.textContent === '1'", workspace)
+        try await key(".", workspace); try await waitForModel("lunaEditor.view.state.doc.textContent === '1.'", workspace)
+        try await key(" ", workspace); try await waitForModel("lunaEditor.view.state.doc.firstChild.type.name === 'ordered_list'", workspace)
+        var typed = ""
+        for c in "test" {
+            try await key(String(c), workspace); typed += String(c)
+            try await waitForModel("lunaEditor.view.state.doc.textContent === '\(typed)'", workspace)
+        }
         try await key("\r", code: 36, workspace)
-        for c in "next" { try await key(String(c), workspace) }
-        let result = try await source(workspace); XCTAssertEqual(result, "1. test\n2. next")
+        try await waitForModel("lunaEditor.view.state.doc.firstChild.childCount === 2", workspace)
+        for c in "next" {
+            try await key(String(c), workspace); typed += String(c)
+            try await waitForModel("lunaEditor.view.state.doc.textContent === '\(typed)'", workspace)
+        }
+        try await eventually("1. test\n2. next", workspace)
     }
     @MainActor func testSelectedListIndentOutdentAndAtomicUndo() async throws {
         let workspace = try await workspace("- A\n- B\n- C")
@@ -112,7 +134,14 @@ final class ProseMirrorEditorTests: XCTestCase {
         let original = "Before\n[Bookmark](https://example.com)\nAfter"
         let workspace = try await workspace(original); try await select(1, workspace)
         try await key("a", code: 0, flags: .command, workspace)
-        for c in "word" { try await key(String(c), workspace) }
+        // Deliver a native word in one event batch. Runner scheduling between
+        // awaited letters must not turn one word into several history groups.
+        let window = try XCTUnwrap(workspace.window)
+        for c in "word" {
+            window.sendEvent(try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: String(c), charactersIgnoringModifiers: String(c), isARepeat: false, keyCode: 0)))
+        }
         try await eventually("word", workspace)
         try await key("z", code: 6, flags: .command, workspace); try await eventually(original, workspace)
         try await key("z", code: 6, flags: [.command,.shift], workspace); try await eventually("word", workspace)
