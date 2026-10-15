@@ -17,6 +17,12 @@ and `lunaEditor.history`. Use actual AppKit keys to verify browser caret movemen
 composition, and responder routing. ProseMirror owns history and selection. Node
 views own previews and native media; metadata must never create transactions.
 
+In native test fixtures, establish the window responder before setting model/DOM
+selection; keep the WK content responder while it owns focus. Wait for actual
+model changes after sending a key instead of treating a fixed sleep as delivery.
+Inject a native word as one event batch when asserting one-word Undo, so runner
+scheduling does not create artificial gaps beyond the history grouping interval.
+
 Exercise immediate native commands followed by typing, not only commands separated
 by sleeps: the native adapter queues commands and startup input in order. Include
 pending edits followed by Source, New Note, Save, and termination snapshots. A new
