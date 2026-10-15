@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          "Prototypes/ProseMirror/shell.html"
+        ],
+        "createdAt": "2026-10-15T05:23:55.618Z",
+        "reason": "Agent: unbuilt HTML template injects style.css during build; rendered trial verified with 22px h1, 14px body and 18px editor. Restrict this exception to the template and this rule."
+      }
+    ]
+  }
+}
