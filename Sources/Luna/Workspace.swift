@@ -97,6 +97,8 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         window.deleteSelectedNote = { [weak self] in self?.deleteNote() }
         window.selectNoteNumber = { [weak self] number in self?.selectNote(number: number) ?? false }
         window.showShortcutHints = { [weak self] visible in self?.table.showsShortcutHints = visible }
+        window.liveEditorPaste = { [weak self] plain in self?.pasteLiveClipboard(plain: plain) ?? false }
+        window.liveEditorCommand = { [weak self] command in self?.routeLiveCommand(command) ?? false }
         window.bufferPendingNoteInput = { [weak self] event in
             guard let self, self.richEditing else { return false }
             let focused = self.window?.firstResponder as? NSView
@@ -220,7 +222,6 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
             self.loading = true; self.editor.string = source; self.loading = false
             self.updateHeader(); self.scheduleRecovery(); self.reloadShelf()
         }
-        mediaView.onStructureChange = { [weak self] in self?.updatePreview() }
         updateFont()
         language.addItems(withTitles: ["Plain Text", "Markdown", "JavaScript", "TypeScript", "JSON", "YAML", "Environment", "Shell", "Python", "Swift", "CSS", "HTML", "Configuration"])
         language.isBordered = false; language.font = .systemFont(ofSize: 11); language.target = self; language.action = #selector(changeLanguage)
@@ -421,7 +422,19 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         let id = notes[table.selectedRow].id
         if id != selectedID { select(id) }
     }
+    private func finishPendingLiveEdits(_ action: @escaping () -> Void) -> Bool {
+        guard richEditing, mediaView.hasPendingEdits else { return false }
+        Task { if await mediaView.flushChanges() { action() } }
+        return true
+    }
+    func flushLiveChanges() async -> Bool {
+        for workspace in session.windows.allObjects where workspace.richEditing {
+            if !(await workspace.mediaView.flushChanges()) { return false }
+        }
+        return true
+    }
     func select(_ id: UUID, focusContent: Bool = false) {
+        if finishPendingLiveEdits({ [weak self] in self?.select(id, focusContent: focusContent) }) { return }
         guard flushRecovery() else { return }
         previewing = false; splitPreviewing = false
         selectedID = id
@@ -553,22 +566,34 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         largerButton?.isEnabled = size < maximumDisplayedSize
         viewportChanged()
     }
-    @objc func newNote() { guard flushRecovery() else { return }; let note = Note(language: "Markdown"); notes.insert(note, at: 0); reloadShelf(); select(note.id, focusContent: true); persistCurrent(); showWindow(nil) }
+    @objc func newNote() { if finishPendingLiveEdits({ [weak self] in self?.newNote() }) { return }; guard flushRecovery() else { return }; let note = Note(language: "Markdown"); notes.insert(note, at: 0); reloadShelf(); select(note.id, focusContent: true); persistCurrent(); showWindow(nil) }
     func insertEmbed(_ snippet: String) {
         editor.insertText(snippet, replacementRange: editor.selectedRange())
         mediaView.queueStyleMenu(for: snippet)
         richEditing = true; updatePreview(); focusContent()
     }
+    @discardableResult func routeLiveCommand(_ command: String) -> Bool {
+        guard richEditing, !mediaView.isHidden, mediaView.acceptsEditorCommands,
+              let focus = window?.firstResponder as? NSView,
+              focus === mediaView || focus.isDescendant(of: mediaView) else { return false }
+        mediaView.command(command); return true
+    }
+    @discardableResult func pasteLiveClipboard(plain: Bool = false) -> Bool {
+        guard richEditing, !mediaView.isHidden, mediaView.acceptsEditorCommands,
+              let focus = window?.firstResponder as? NSView,
+              focus === mediaView || focus.isDescendant(of: mediaView) else { return false }
+        return mediaView.pasteClipboard(plain: plain)
+    }
     @objc func selectAllContent(_ sender: Any?) {
         let focusedView = window?.firstResponder as? NSView
-        if richEditing && !mediaView.isHidden &&
+        if richEditing && !mediaView.isHidden && mediaView.acceptsEditorCommands &&
             (focusedView === mediaView || focusedView?.isDescendant(of: mediaView) == true) { mediaView.selectAllNote() }
         else if focusedView === editor || focusedView?.isDescendant(of: editor) == true { editor.selectAll(sender) }
         else { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: window?.firstResponder, from: sender) }
     }
     @objc func pastePlainText(_ sender: Any?) {
         let focusedView = window?.firstResponder as? NSView
-        if richEditing && !mediaView.isHidden &&
+        if richEditing && !mediaView.isHidden && mediaView.acceptsEditorCommands &&
             (focusedView === mediaView || focusedView?.isDescendant(of: mediaView) == true) { mediaView.pasteAsPlainText(sender) }
         else { NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: window?.firstResponder, from: sender) }
     }
@@ -590,6 +615,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
                     self.notes[row].attachments = self.notes[row].media + media
                     let snippet = "\n" + media.map { "![\($0.filename.replacingOccurrences(of: "]", with: "").replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " "))](\($0.reference))" }.joined(separator: "\n\n") + "\n"
                     if self.selectedID == id, fromLiveView, self.richEditing {
+                        self.mediaView.updateAttachments(self.notes[row], store: self.store)
                         self.mediaView.insertSnippet(snippet)
                     } else if self.selectedID == id {
                         let length = (self.editor.string as NSString).length
@@ -636,6 +662,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         }
     }
     @objc func save() {
+        if finishPendingLiveEdits({ [weak self] in self?.save() }) { return }
         guard let index else { return }
         guard let path = notes[index].path else { saveAs(); return }
         let url = URL(fileURLWithPath: path)
@@ -651,6 +678,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         writeCurrent(to: url)
     }
     @objc func saveAs() {
+        if finishPendingLiveEdits({ [weak self] in self?.saveAs() }) { return }
         guard let index else { return }; let id = notes[index].id
         let panel = NSSavePanel(); panel.nameFieldStringValue = notes[index].path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Untitled.txt"
         if !notes[index].media.isEmpty { panel.nameFieldStringValue = "Untitled.md" }
@@ -733,6 +761,7 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         else { EditorPreferences.fontSize = size }
     }
     @objc func changeLanguage() {
+        if finishPendingLiveEdits({ [weak self] in self?.changeLanguage() }) { return }
         guard let index else { return }; notes[index].language = language.titleOfSelectedItem ?? "Plain Text"
         richEditing = supportsLiveEditing(notes[index])
         highlighter.configure(sourceLanguage)
@@ -752,11 +781,13 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
     @objc func markdownCode() { if canFormatMarkdown { if richEditing { mediaView.formatSelection("code") } else { editor.toggleMarkdownMarker("`") } } }
 
     @objc func toggleSplitPreview() {
+        if finishPendingLiveEdits({ [weak self] in self?.toggleSplitPreview() }) { return }
         guard index.map({ notes[$0].language == "Markdown" }) == true else { return }
         splitPreviewing.toggle(); previewing = false; richEditing = false
         updatePreview(); focusContent()
     }
     @objc func toggleMarkdownPreview() {
+        if finishPendingLiveEdits({ [weak self] in self?.toggleMarkdownPreview() }) { return }
         guard let index else { return }
         splitPreviewing = false
         if supportsLiveEditing(notes[index]) || richEditing { richEditing.toggle(); previewing = false }
@@ -936,9 +967,12 @@ final class Workspace: NSWindowController, NSWindowDelegate, NSTextViewDelegate,
         if item.action == #selector(smaller) { return displayedFontSize > minimumDisplayedSize }
         return true
     }
-    func flushAllRecovery() -> Bool { session.pendingMediaImports == 0 && session.windows.allObjects.allSatisfy { $0.flushRecovery() } }
+    func flushAllRecovery() -> Bool { session.pendingMediaImports == 0 && session.windows.allObjects.allSatisfy { !$0.mediaView.hasPendingEdits && $0.flushRecovery() } }
     override func showWindow(_ sender: Any?) { super.showWindow(sender); updatePreview() }
     func windowWillClose(_ notification: Notification) { mediaView.suspend() }
-    func windowShouldClose(_ sender: NSWindow) -> Bool { session.pendingMediaImports == 0 && flushRecovery() }
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if finishPendingLiveEdits({ [weak self] in self?.window?.performClose(nil) }) { return false }
+        return session.pendingMediaImports == 0 && flushRecovery()
+    }
     func showError(_ error: Error) { NSAlert(error: error).runModal() }
 }

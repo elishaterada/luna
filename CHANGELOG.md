@@ -1,5 +1,11 @@
 # Luna release notes
 
+## Unreleased
+
+- Live View now uses ProseMirror for editing, selection, lists, and Undo.
+- Keeps URL paste, Mentions, Bookmarks, Embeds, media attachments, task lists, slash commands, and selection formatting in the saved editor.
+- Preserves existing notes and Markdown Source, with ordered startup typing and native editing shortcuts.
+
 ## 0.13.3 — 2026-10-14
 
 - Press Left Arrow at the start of a list item to move to the end of the previous line in Live View.

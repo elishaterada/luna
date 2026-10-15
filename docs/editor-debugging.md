@@ -2,6 +2,30 @@
 
 Use this guide for caret, list, selection, focus, and undo bugs. The dated evidence and superseded decisions are in [llm-changelog.md](llm-changelog.md); release verification follows [releasing.md](releasing.md).
 
+## Current editor: ProseMirror Live View
+
+Saved Live View now runs the shared engine in `Editor/ProseMirror`, through
+`MediaNoteView.swift`. Native Source remains `EditorView.swift`. Use
+`ProseMirrorEditorTests.swift` for saved-editor regressions. The old DOM marker,
+custom caret, and native contenteditable Undo implementation has been removed.
+The historical traps below explain past failures; do not restore their repair code
+or construct new fixtures against `.text`, `.list-marker`, or `#text-caret`.
+
+For a current fixture, wait for `window.lunaEditor.view`, set model selection with
+`lunaEditor.select(from,to)`, and inspect `lunaEditor.state`, `lunaEditor.source`,
+and `lunaEditor.history`. Use actual AppKit keys to verify browser caret movement,
+composition, and responder routing. ProseMirror owns history and selection. Node
+views own previews and native media; metadata must never create transactions.
+
+Exercise immediate native commands followed by typing, not only commands separated
+by sleeps: the native adapter queues commands and startup input in order. Include
+pending edits followed by Source, New Note, Save, and termination snapshots. A new
+page identity must reject old replies/input. Verify rich node counts after reopening,
+not just source equality: `[Bookmark](url)` on a line without surrounding blank lines
+must reopen as a card. Preserve original Markdown on load/Undo and untouched blocks
+on edits, including blank rows and reference definitions. Changed blocks may normalize
+equivalent Markdown spelling and inline-to-block boundary spaces.
+
 ## Establish the actual editing surface
 
 1. Identify the opened bundle's `CFBundleVersion`, executable path, and executable UUID from the current worktree. Local development builds (`LUNA_DEVELOPMENT_BUILD=1`) show that ID in the footer; compare it with the screenshot. Regular releases omit the footer ID, so read their bundle metadata instead. Enumerate running Luna copies; an installed copy can coexist with `dist/Luna.app` despite sharing a bundle identifier.
@@ -14,14 +38,14 @@ Completion: the running build, editing surface, and protected user-note baseline
 
 - Copy the user's layout into an isolated fixture, including lines above/below the caret, empty rows, rich blocks, original list markers, and invisible anchors. A freshly loaded DOM and one produced by native typing can differ: WebKit creates DIV/P/BR trees during editing.
 - Type letters individually and inspect screenshots after each letter. Include native AppKit keyboard events in regression tests; synthetic DOM key events alone do not prove native editing or focus works.
-- Development builds use a steady caret. Control–Option–D toggles a vertical guide and a readout of preceding selection text and coordinates. Build with `LUNA_DEVELOPMENT_BUILD=1` for these diagnostics; shipped builds blink and ignore that shortcut. Guides remain outside article/source and accessibility content.
+- Live View now uses the native browser caret. Inspect its model selection and DOM range geometry without adding a second drawn caret. `LUNA_DEVELOPMENT_BUILD=1` identifies the opened bundle in the footer; the former Control–Option–D custom-caret guide no longer applies.
 - Measure the actual selection node/offset, visual glyph edge, and drawn caret independently. A caret after the correct character can still have wrong geometry. Compare screenshots with measurements rather than assuming either is authoritative.
 - For a suspicious marker gap, select it and press Backspace in the disposable note, then inspect exact source and DOM text. A highlighted gap can contain a real separator; visual appearance alone did not distinguish it during the October 11 investigation. Confirm which surface renders it before adjusting spacing.
 - Build a fast regression that fails on the reported symptom before changing behavior. Minimize one variable at a time; record which prior checks passed despite the bug. Label speculative defensive changes separately from verified causes.
 
 Completion: the old code fails a repeatable native or DOM regression and the visible failure matches the user's example.
 
-## Known WebKit traps
+## Historical traps in the replaced DOM editor
 
 | Trap | Lesson and regression seam |
 | --- | --- |
@@ -42,7 +66,7 @@ Completion: the old code fails a repeatable native or DOM regression and the vis
 | Selection toolbar disappears when its URL field takes focus | WebKit collapses the document selection when an input gains focus. Retain the saved editor range while the form is open, including selection highlighting and viewport positioning. Wait across selectionchange/animation-frame updates before entering and submitting a URL; a synchronous click/fill/submit test can pass before the form disappears. |
 | Edit Link flashes closed for a long title or URL | Focusing or typing in overflowing inputs emits internal horizontal scroll events. A document capture listener sees those events too. Ignore scroll targets inside the link popover when dismissing menus for note scrolling. Short input fixtures can pass while long-field focus fails; verify both fields across event boundaries, field Select All, saving, and real note scrolling. |
 
-Invisible anchors support editing but are stripped from portable source and copied Markdown. Preserve `-`, `*`, and `+` identity in marker metadata; the rendered circle is presentation. Keep existing literal `•` source rather than guessing its original marker. Literal Source intentionally exposes the Markdown separator; Live View uses layout spacing.
+The replaced editor used invisible anchors and marker metadata. ProseMirror uses document nodes and list attributes instead. Preserve `-`, `*`, `+`, and legacy literal `•` identity in portable source; the rendered circle is presentation. Literal Source intentionally exposes the Markdown separator; Live View uses layout spacing.
 
 ## Exercise a complete writing sequence
 

@@ -1,0 +1,375 @@
+/* Luna's saved writing surface. The browser paints its native caret. */
+:root {
+  color-scheme: dark;
+  --page: transparent;
+  --surface: #292d30;
+  --text: #ccc;
+  --muted: #a0a4aa;
+  --line: #8885;
+  --accent: #19f9d8;
+  --hover: #ffffff12;
+  --selection: #19f9d838;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --surface: #f7f7f7;
+  --text: #242833;
+  --muted: #606773;
+  --accent: #00796b;
+  --hover: #00000009;
+  --selection: #00796b30;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  color: var(--text);
+  background: transparent;
+  font:
+    var(--editor-size, 18px) / 1.8 -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+}
+::selection {
+  background: var(--selection);
+}
+#editor {
+  min-height: 100vh;
+  padding: 24px 40px 80px;
+}
+.ProseMirror {
+  min-height: calc(100vh - 104px);
+  max-width: 72ch;
+  outline: none;
+  caret-color: var(--accent);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.ProseMirror p {
+  margin: 0;
+  min-height: 1.8em;
+}
+.ProseMirror ul,
+.ProseMirror ol {
+  margin: 0;
+  padding-left: 1.5em;
+}
+.ProseMirror li {
+  position: relative;
+}
+.ProseMirror li > p + p {
+  margin-top: 0.4em;
+}
+.ProseMirror li::marker {
+  font-variant-numeric: tabular-nums;
+}
+.ProseMirror li[data-checked]::marker {
+  content: "";
+}
+.ProseMirror input[type="checkbox"] {
+  position: absolute;
+  left: -1.5em;
+  top: 0.5em;
+  accent-color: var(--accent);
+  width: 1em;
+  height: 1em;
+  margin: 0;
+}
+.ProseMirror li[data-checked="true"] > p {
+  color: var(--muted);
+}
+.ProseMirror h1 {
+  font-size: 1.8em;
+}
+.ProseMirror h2 {
+  font-size: 1.45em;
+}
+.ProseMirror h3 {
+  font-size: 1.2em;
+}
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
+  font-size: 1em;
+}
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3 {
+  line-height: 1.4;
+  margin: 0.5em 0 0.25em;
+}
+.ProseMirror blockquote {
+  margin: 0;
+  padding-left: 1em;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
+.ProseMirror pre {
+  white-space: pre-wrap;
+  padding: 12px;
+  background: var(--hover);
+  border-radius: 5px;
+}
+.ProseMirror code {
+  font:
+    0.85em ui-monospace,
+    SFMono-Regular,
+    monospace;
+  background: var(--hover);
+  padding: 2px 3px;
+}
+.ProseMirror pre code {
+  padding: 0;
+  background: none;
+}
+.ProseMirror a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ProseMirror hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 16px 0;
+}
+button,
+input {
+  font: inherit;
+  color: var(--text);
+}
+button {
+  border: 0;
+  background: transparent;
+  border-radius: 5px;
+  padding: 6px 9px;
+  min-height: 30px;
+  cursor: pointer;
+}
+button:hover {
+  background: var(--hover);
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+[hidden] {
+  display: none !important;
+}
+#selection-toolbar,
+#slash-menu {
+  position: fixed;
+  z-index: 15;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #0004;
+  font-size: 12px;
+}
+#selection-toolbar button[aria-pressed="true"],
+#slash-menu button[aria-selected="true"] {
+  color: var(--accent);
+  background: var(--hover);
+}
+#slash-menu {
+  width: 200px;
+}
+#slash-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+#selection-toolbar input {
+  width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px;
+}
+#selection-toolbar form {
+  display: flex;
+  gap: 4px;
+}
+.luna-media {
+  margin: 12px 0;
+  user-select: none;
+}
+.luna-media img,
+.luna-media video {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 7px;
+}
+.luna-media audio {
+  width: 100%;
+}
+.luna-media.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+@media (max-width: 500px) {
+  #editor {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+.luna-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  vertical-align: baseline;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.luna-mention .link-copy {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 35ch;
+}
+.link-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  flex: none;
+  border-radius: 3px;
+}
+.luna-mention:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.luna-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  line-height: 1.4;
+  user-select: none;
+}
+.luna-card .link-copy {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+}
+.luna-card .link-copy strong,
+.luna-card .link-copy small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.luna-card .link-copy small {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 5px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.link-preview {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.card-controls {
+  display: flex;
+  width: 100%;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.card-controls button {
+  font-size: 11px;
+  min-height: 28px;
+  color: var(--muted);
+}
+.luna-card.ProseMirror-selectednode,
+.luna-mention.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.luna-card iframe {
+  display: block;
+  width: 100%;
+  height: 320px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--page);
+}
+.embed-caption {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+#link-popover {
+  position: fixed;
+  z-index: 20;
+  width: 230px;
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 20px);
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #0004;
+  padding: 7px;
+  font-size: 13px;
+}
+#link-popover .popover-label {
+  margin: 4px 8px 7px;
+  font-size: 11px;
+  color: var(--muted);
+}
+#link-popover > button {
+  display: block;
+  text-align: left;
+  width: 100%;
+}
+#link-popover button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--hover);
+}
+.link-actions {
+  border-top: 1px solid var(--line);
+  padding-top: 5px;
+  margin-top: 5px;
+}
+.link-actions button {
+  display: block;
+  text-align: left;
+  width: 100%;
+  font-size: 12px;
+}
+#link-popover label {
+  display: block;
+  margin: 8px;
+  font-size: 12px;
+}
+#link-popover input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px;
+  background: var(--page);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font:
+    13px -apple-system,
+    sans-serif;
+}
+#link-popover input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

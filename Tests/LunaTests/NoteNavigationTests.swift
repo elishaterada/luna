@@ -253,10 +253,10 @@ final class NoteNavigationTests: XCTestCase {
         workspace.newNote()
         XCTAssertTrue(workspace.richEditing)
         for _ in 0..<100 {
-            if (try? await workspace.mediaView.evaluateJavaScript("document.activeElement?.matches('.text')")) as? Bool == true { break }
+            if (try? await workspace.mediaView.evaluateJavaScript("document.activeElement?.matches('.ProseMirror')")) as? Bool == true { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        let focused = (try? await workspace.mediaView.evaluateJavaScript("document.activeElement?.matches('.text')")) as? Bool
+        let focused = (try? await workspace.mediaView.evaluateJavaScript("document.activeElement?.matches('.ProseMirror')")) as? Bool
         XCTAssertEqual(focused, true)
     }
 }

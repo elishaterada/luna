@@ -36,7 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else { urls.forEach { workspace.open($0) } }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { workspace.showWindow(nil); return true }
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply { workspace == nil || workspace.flushAllRecovery() ? .terminateNow : .terminateCancel }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let workspace else { return .terminateNow }
+        Task { let ready = await workspace.flushLiveChanges(); sender.reply(toApplicationShouldTerminate: ready && workspace.flushAllRecovery()) }
+        return .terminateLater
+    }
     @objc func showSettings() { commandSettings.showWindow(nil) }
     @objc func buyMeACoffee() {
         NSWorkspace.shared.open(URL(string: "https://buymeacoffee.com/elishaterada")!)
@@ -46,10 +50,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow, !prototype.acceptsEditorCommands {
             NSApp.sendAction(Selector(("selectAll:")), to: nil, from: sender); return
         }
-        if routePrototype("selectAll") { return }
+        if routeEditorCommand("selectAll") { return }
         guard let workspace else { return }
         let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? workspace
         active.selectAllContent(sender)
+    }
+    @objc func pasteContent(_ sender: Any?) {
+        if let workspace {
+            let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow }
+            if active?.pasteLiveClipboard() == true { return }
+        }
+        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: sender)
     }
     @objc func pastePlainText(_ sender: Any?) {
         if let field = NSApp.keyWindow?.firstResponder as? NSTextView, field.isFieldEditor,
@@ -62,24 +73,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? workspace
         active.pastePlainText(sender)
     }
-    private func routePrototype(_ command: String) -> Bool {
-        guard let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow, prototype.acceptsEditorCommands else { return false }
-        prototype.command(command); return true
+    private func routeEditorCommand(_ command: String) -> Bool {
+        if let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow {
+            guard prototype.acceptsEditorCommands else { return false }
+            prototype.command(command); return true
+        }
+        guard let workspace else { return false }
+        let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? (workspace.window === NSApp.keyWindow ? workspace : nil)
+        return active?.routeLiveCommand(command) ?? false
     }
     @objc func undoContent(_ sender: Any?) {
-        if !routePrototype("undo") { NSApp.sendAction(Selector(("undo:")), to: nil, from: sender) }
+        if !routeEditorCommand("undo") { NSApp.sendAction(Selector(("undo:")), to: nil, from: sender) }
     }
     @objc func redoContent(_ sender: Any?) {
-        if !routePrototype("redo") { NSApp.sendAction(Selector(("redo:")), to: nil, from: sender) }
+        if !routeEditorCommand("redo") { NSApp.sendAction(Selector(("redo:")), to: nil, from: sender) }
     }
     @objc func boldContent(_ sender: Any?) {
-        if !routePrototype("bold") { NSApp.sendAction(#selector(Workspace.markdownBold), to: nil, from: sender) }
+        if !routeEditorCommand("bold") { NSApp.sendAction(#selector(Workspace.markdownBold), to: nil, from: sender) }
     }
     @objc func italicContent(_ sender: Any?) {
-        if !routePrototype("italic") { NSApp.sendAction(#selector(Workspace.markdownItalic), to: nil, from: sender) }
+        if !routeEditorCommand("italic") { NSApp.sendAction(#selector(Workspace.markdownItalic), to: nil, from: sender) }
     }
     @objc func codeContent(_ sender: Any?) {
-        if !routePrototype("code") { NSApp.sendAction(#selector(Workspace.markdownCode), to: nil, from: sender) }
+        if !routeEditorCommand("code") { NSApp.sendAction(#selector(Workspace.markdownCode), to: nil, from: sender) }
     }
     @objc func tryProseMirror() {
         if let prototype = proseMirrorPrototype, prototype.window?.isVisible == true { prototype.showWindow(nil); return }
@@ -119,10 +135,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item(note, "Open in New Window", #selector(Workspace.openClickedNoteInWindow), "o", [.command, .shift])
         item(note, "Delete Note…", #selector(Workspace.deleteNote), "\u{7f}")
         let edit = submenu("Edit")
-        item(edit, "Undo", prototypeEnabled ? #selector(undoContent) : Selector(("undo:")), "z", target: prototypeEnabled ? self : nil)
-        item(edit, "Redo", prototypeEnabled ? #selector(redoContent) : Selector(("redo:")), "z", [.command, .shift], target: prototypeEnabled ? self : nil)
+        item(edit, "Undo", #selector(undoContent), "z", target: self)
+        item(edit, "Redo", #selector(redoContent), "z", [.command, .shift], target: self)
         edit.addItem(.separator()); item(edit, "Cut", #selector(NSText.cut(_:)), "x"); item(edit, "Copy", #selector(NSText.copy(_:)), "c")
-        item(edit, "Paste", #selector(NSText.paste(_:)), "v")
+        item(edit, "Paste", #selector(pasteContent), "v", target: self)
         item(edit, "Paste as Plain Text", #selector(pastePlainText), "v", [.command, .shift], target: self)
         item(edit, "Select All", #selector(selectAllContent), "a", target: self)
         edit.addItem(.separator())

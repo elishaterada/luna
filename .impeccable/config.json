@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-10-15T05:23:55.618Z",
         "reason": "Agent: unbuilt HTML template injects style.css during build; rendered trial verified with 22px h1, 14px body and 18px editor. Restrict this exception to the template and this rule."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "Editor/ProseMirror/style.css"
+        ],
+        "createdAt": "2026-10-15T14:08:24.869Z",
+        "reason": "Agent: the only matching border in this file is the standard Markdown blockquote rule, not a card accent; retain the domain-appropriate quotation marker."
       }
     ]
   }

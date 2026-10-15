@@ -5,8 +5,8 @@ WKWebView without Luna's marker anchors, selection normalization, custom caret,
 or special whole-note Undo bookkeeping? The current iteration also evaluates the
 complete URL paste → Mention/Bookmark/Embed → conversion → Undo → Markdown reopen workflow.
 
-This experiment lives on `codex/prosemirror-prototype`. It is not a production
-editor migration. The app opens it through **View → Try ProseMirror…** in a local
+This separate, memory-only trial remains available alongside the saved Live View
+migration documented in [Editor/ProseMirror](../../Editor/ProseMirror/README.md). The app opens it through **View → Try ProseMirror…** in a local
 development build. All edits stay in memory in a separate window. The copy tab
 receives a string copy of the active note; it has no reference to Luna's recovery
 store or note model. Resetting an example or closing the window discards its edits.
@@ -30,8 +30,8 @@ The standard editor and its saved notes remain in the main Luna window.
 To rebuild the HTML after changing this prototype's source:
 
 ```sh
-npm --prefix Prototypes/ProseMirror ci
-npm --prefix Prototypes/ProseMirror run build
+npm --prefix Editor/ProseMirror ci
+npm --prefix Editor/ProseMirror run build
 ```
 
 `build.mjs` bundles the pinned packages and their licenses into the app resources.
@@ -52,13 +52,13 @@ Swift packaging uses the committed output and does not need Node or npm.
 
 ## URL workflow
 
-`note-model.js` owns the schema and portable Markdown conversion. Mentions are
+The shared `Editor/ProseMirror/note-model.js` owns the schema and portable Markdown conversion. Mentions are
 inline atom nodes, Bookmark/Embed items are block atom nodes, and normal links use
 ProseMirror link marks. Display changes use one transaction with a valid body
 selection; inserting a block splits the surrounding paragraph through ProseMirror.
 Native Undo/Redo restores each conversion separately from later typing.
 
-`links.js` owns the paste/display plugin, node views and popover. Metadata lives in
+The shared `Editor/ProseMirror/links.js` owns the paste/display plugin, node views and popover. Metadata lives in
 a URL-keyed view cache, outside document attributes and Undo history. Swift reuses
 Luna's existing `LinkMetadata` and `EmbedResolver`; replies carry a page-session
 identifier and subframes cannot call the native bridge. Node views render titles,
@@ -74,14 +74,11 @@ in native dialogs; it never saves to the original note automatically.
 
 ## Current limits
 
-The parser/serializer normalizes CommonMark spacing and some syntax; exact source
-preservation is not implemented, including boundary spaces when inline content
-becomes a block. Legacy `•`/checkbox syntax remains ordinary text. General image
-attachments remain placeholders; Bookmark preview images are live. Luna's slash
-menu, attachment importing, saved-note/recovery integration, and complete feature
-parity remain outside this trial. Third-party iframe availability depends on the
-provider and its embedding policy. The standalone HTML has no native metadata or
-file-dialog bridge; use the app to evaluate those paths.
+The trial shares the saved editor's schema and link workflow, but retains its own
+example UI and command setup. It has no recovery writes, local attachment serving,
+or startup input queue. Use the main Live View for slash commands, tasks, saved
+notes, and attachments. Third-party iframe availability depends on the provider.
+The standalone HTML has no native metadata or file-dialog bridge.
 
 ## Verdict
 
@@ -101,7 +98,7 @@ The initial evidence supports continued evaluation of this engine. It does not
 establish complete editing, exact Markdown, accessibility, input-method, or
 attachment parity. Actual marked-text IME composition remains unverified;
 automation's direct Unicode key injection did not insert those characters, while
-native clipboard paste did. This trial is not ready to replace the saved editor.
+native clipboard paste did. The trial itself remains a diagnostic surface; the saved integration is separate.
 
 The URL iteration additionally passed an agent-run check over 20 combinations of
 paragraph/heading/list placement and display choice, conversions in both

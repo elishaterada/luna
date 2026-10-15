@@ -5,6 +5,8 @@ final class NoteShortcutWindow: NSWindow {
     var deleteSelectedNote: (() -> Void)?
     var selectNoteNumber: ((Int) -> Bool)?
     var showShortcutHints: ((Bool) -> Void)?
+    var liveEditorPaste: ((Bool) -> Bool)?
+    var liveEditorCommand: ((String) -> Bool)?
     var bufferPendingNoteInput: ((NSEvent) -> Bool)?
     private var hintTimer: Timer?
     private var holdingCommand = false
@@ -25,6 +27,21 @@ final class NoteShortcutWindow: NSWindow {
            let characters = event.charactersIgnoringModifiers, characters.count == 1,
            let number = Int(characters), (1...9).contains(number),
            selectNoteNumber?(number) == true { return true }
+        if attachedSheet == nil {
+            if event.keyCode == 9, modifiers == .command || modifiers == [.command,.shift],
+               liveEditorPaste?(modifiers.contains(.shift)) == true { return true }
+            let command: String?
+            switch (modifiers, event.keyCode) {
+            case (.command, 0): command = "selectAll"
+            case (.command, 6): command = "undo"
+            case ([.command,.shift], 6): command = "redo"
+            case (.command, 11): command = "bold"
+            case (.command, 34): command = "italic"
+            case ([.command,.shift], 8): command = "code"
+            default: command = nil
+            }
+            if let command, liveEditorCommand?(command) == true { return true }
+        }
         return false
     }
 
