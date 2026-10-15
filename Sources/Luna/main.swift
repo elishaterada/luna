@@ -42,19 +42,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(URL(string: "https://buymeacoffee.com/elishaterada")!)
     }
     @objc func selectAllContent(_ sender: Any?) {
+        if let field = NSApp.keyWindow?.firstResponder as? NSTextView, field.isFieldEditor { field.selectAll(sender); return }
+        if let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow, !prototype.acceptsEditorCommands {
+            NSApp.sendAction(Selector(("selectAll:")), to: nil, from: sender); return
+        }
         if routePrototype("selectAll") { return }
         guard let workspace else { return }
         let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? workspace
         active.selectAllContent(sender)
     }
     @objc func pastePlainText(_ sender: Any?) {
-        if let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow { prototype.pastePlainText(); return }
+        if let field = NSApp.keyWindow?.firstResponder as? NSTextView, field.isFieldEditor,
+           let text = NSPasteboard.general.string(forType: .string) { field.insertText(text, replacementRange: field.selectedRange()); return }
+        if let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow, !prototype.acceptsEditorCommands {
+            NSApp.sendAction(Selector(("pasteAsPlainText:")), to: nil, from: sender); return
+        }
+        if let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow, prototype.acceptsEditorCommands { prototype.pastePlainText(); return }
         guard let workspace else { return }
         let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? workspace
         active.pastePlainText(sender)
     }
     private func routePrototype(_ command: String) -> Bool {
-        guard let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow else { return false }
+        guard let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow, prototype.acceptsEditorCommands else { return false }
         prototype.command(command); return true
     }
     @objc func undoContent(_ sender: Any?) {

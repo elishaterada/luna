@@ -1,57 +1,21 @@
 // Throwaway experiment. No storage, recovery bridge, custom caret, or arrow repair.
-import {Schema} from 'prosemirror-model';
 import {EditorState, TextSelection, NodeSelection} from 'prosemirror-state';
 import {EditorView} from 'prosemirror-view';
-import {schema as markdownSchema, defaultMarkdownParser, defaultMarkdownSerializer, MarkdownParser, MarkdownSerializer} from 'prosemirror-markdown';
 import {exampleSetup} from 'prosemirror-example-setup';
 import {undo, redo, undoDepth, redoDepth, closeHistory} from 'prosemirror-history';
 import {toggleMark, selectAll} from 'prosemirror-commands';
 import {sinkListItem, liftListItem, wrapInList, splitListItem} from 'prosemirror-schema-list';
 import {keymap} from 'prosemirror-keymap';
 
-// The document and Markdown conversion are independent of the playground UI.
-const schema = new Schema({nodes:markdownSchema.spec.nodes
-  .update('image', {...markdownSchema.spec.nodes.get('image'), toDOM(node) {
-    return ['span', {class:'prototype-image',contenteditable:'false'}, 'Image: '+(node.attrs.alt||node.attrs.src)];
-  }})
-  .addBefore('paragraph', 'luna_card', {
-    group:'block', atom:true, selectable:true,
-    attrs:{source:{},kind:{},url:{}},
-    toDOM(node) {
-      let host=node.attrs.url;
-      try {host=new URL(host).host;} catch {}
-      return ['figure', {class:'prototype-attachment',contenteditable:'false'},
-        ['strong',{},node.attrs.kind+' · '+host],['small',{},'Preview placeholder in this trial']];
-    }
-  }), marks:markdownSchema.spec.marks});
-const tokenizer=defaultMarkdownParser.tokenizer;
-tokenizer.core.ruler.after('inline','luna_cards',state=>{
-  for(let i=0;i<state.tokens.length-2;i++) {
-    const [open,inline,close]=state.tokens.slice(i,i+3);
-    if(open.type!=='paragraph_open'||inline.type!=='inline'||close.type!=='paragraph_close')continue;
-    const match=inline.content.match(/^\[(Bookmark|Preview|Embed)\]\((https?:\/\/[^\s]+)\)$/);
-    if(!match)continue;
-    const token=new open.constructor('luna_card','figure',0);
-    token.meta={source:inline.content,kind:match[1]==='Preview'?'Bookmark':match[1],url:match[2]};
-    state.tokens.splice(i,3,token);
-  }
-});
-const parser=new MarkdownParser(schema,tokenizer,{...defaultMarkdownParser.tokens,luna_card:{node:'luna_card',getAttrs:token=>token.meta}});
-const serializer=new MarkdownSerializer({...defaultMarkdownSerializer.nodes,luna_card(state,node) {
-  state.write(node.attrs.source);state.closeBlock(node);
-}},defaultMarkdownSerializer.marks);
-const NoteModel={
-  parse:source=>parser.parse(source),
-  markdown:doc=>serializer.serialize(doc),
-  describe(state) {
-    const selection=state.selection,counts={};
-    state.doc.descendants(node=>{if(!node.isText)counts[node.type.name]=(counts[node.type.name]||0)+1;});
-    return {document:state.doc.toJSON(),selection:selection.toJSON(),counts,
-      paragraph:selection.$from.parent.type.name,offset:selection.$from.parentOffset,
-      selected:state.doc.textBetween(selection.from,selection.to,'\n')};
-  }
-};
+import {schema,NoteModel} from './note-model.js';
+import {createLinks} from './links.js';
+
+const status=text=>document.getElementById('workflow-status').textContent=text;
+const links=createLinks(()=>view,status);
 const examples={
+  urls:{title:'Paste and change a URL',source:'',
+    instructions:'Paste a URL, choose Mention, Bookmark, or Embed Site, then keep typing. Try Undo/Redo and Reopen Markdown. Embedded sites can also be opened in your browser.',
+    steps:[['Insert example URL',()=>links.paste('https://en.wikipedia.org/wiki/Karaoke')],['Reopen Markdown',()=>reopenMarkdown()]]},
   bullets:{title:'Try the original issue',source:'Updates:\n- Filipino dish\n- ',
     instructions:'Place the caret on the empty bullet, then press Left once. It should land after “Filipino dish.” Type a letter and Undo.',
     steps:[['Place on empty bullet',()=>placeInLastItem()],['Undo',()=>command('undo')]]},
@@ -59,7 +23,7 @@ const examples={
     instructions:'Continue an item with Return. Use Tab and Shift–Tab to indent and outdent. Try Backspace at the start, then Undo.',
     steps:[['Place in last item',()=>placeInLastItem(true)],['Continue item',()=>command('continue')],['Indent',()=>command('indent')],['Outdent',()=>command('outdent')]]},
   rich:{title:'Select across a rich block',source:'Before the bookmark\n\n[Bookmark](https://example.com)\n\n- After the bookmark\n\n**Bold text**, *italic text*, and `inline code`.',
-    instructions:'Select text across the bookmark and replace it. Undo should restore the text and bookmark together. Cards are placeholders in this trial.',
+    instructions:'Select text across the bookmark and replace it. Undo should restore the text and bookmark together. Try each display using the card’s Display as menu.',
     steps:[['Select the whole copy',()=>command('selectAll')],['Undo',()=>command('undo')],['Redo',()=>command('redo')]]}
 };
 let view,activeExample='bullets';
@@ -68,7 +32,7 @@ const commands={bold:toggleMark(schema.marks.strong),italic:toggleMark(schema.ma
   indent:sinkListItem(schema.nodes.list_item),outdent:liftListItem(schema.nodes.list_item),continue:splitListItem(schema.nodes.list_item),
   undo,redo,selectAll};
 function plugins() {
-  return [keymap({'Tab':commands.indent,'Shift-Tab':commands.outdent}),...exampleSetup({schema,menuBar:false})];
+  return [links.plugin,keymap({'Tab':commands.indent,'Shift-Tab':commands.outdent}),...exampleSetup({schema,menuBar:false})];
 }
 function refresh() {
   const state=view.state,info=NoteModel.describe(state);
@@ -76,7 +40,7 @@ function refresh() {
   for(let depth=state.selection.$from.depth;depth>0;depth--) {
     if(state.selection.$from.node(depth).type===schema.nodes.list_item){location='list item';break;}
   }
-  document.getElementById('selection').textContent=state.selection instanceof NodeSelection?'Bookmark selected':
+  document.getElementById('selection').textContent=state.selection instanceof NodeSelection?'Link item selected':
     state.selection.empty?'Caret in '+location+' · character '+info.offset:
       'Selected '+info.selected.length+' characters';
   document.getElementById('history-state').textContent=undoDepth(state)+' undo steps · '+redoDepth(state)+' redo steps';
@@ -94,7 +58,7 @@ function loadExample(name) {
   const state=EditorState.create({doc:NoteModel.parse(example.source),plugins:plugins()});
   if(view)view.updateState(state);
   else view=new EditorView(document.getElementById('editor'),{
-    state,attributes:{'aria-label':'ProseMirror writing playground',spellcheck:'false'},
+    state,nodeViews:links.nodeViews,attributes:{'aria-label':'ProseMirror writing playground',spellcheck:'false'},
     dispatchTransaction(transaction) {view.updateState(view.state.apply(transaction));refresh();},
     handleDOMEvents:{blur:()=>{refresh();return false;}}
   });
@@ -110,6 +74,8 @@ function loadExample(name) {
   }
   refresh();view.focus();
   if(name==='bullets')placeInLastItem();
+  if(name==='urls')view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
+  status('');
 }
 function placeInLastItem(atEnd=false) {
   let position=1;
@@ -120,12 +86,24 @@ function placeInLastItem(atEnd=false) {
 }
 function command(name,text) {
   if(!view)return false;
-  view.focus();
-  if(name==='pastePlainText'){view.dispatch(view.state.tr.insertText(text).scrollIntoView());return true;}
+  const field=document.activeElement;
+  if(field?.matches('input,textarea')) {
+    if(name==='selectAll'){field.select();return true;}
+    if(name==='pastePlainText')return document.execCommand('insertText',false,text);
+    if(name==='undo'||name==='redo')return document.execCommand(name);
+    return false;
+  }
+  if(field?.tagName==='IFRAME')return false;
+  if(name==='showLink'){links.showSelected();return true;}
+  if(name==='reopenMarkdown'){reopenMarkdown();return true;}
+  if(name==='exportMarkdown'){links.native('export',{source:NoteModel.markdown(view.state.doc)});return true;}
+  if(name==='importMarkdown'){links.native('import');return true;}
+  links.close();view.focus();
+  if(name==='pastePlainText'){view.dispatch(closeHistory(view.state.tr.insertText(text).scrollIntoView()));return true;}
   const handled=commands[name]?.(view.state,view.dispatch,view)||false;refresh();return handled;
 }
 document.querySelector('.toolbar').addEventListener('mousedown',event=>event.preventDefault());
-document.querySelector('.toolbar').addEventListener('click',event=>{
+document.addEventListener('click',event=>{
   const name=event.target.closest('[data-command]')?.dataset.command;if(name)command(name);
 });
 document.querySelector('.scenarios').addEventListener('click',event=>{
@@ -138,8 +116,20 @@ document.querySelector('.scenarios').addEventListener('keydown',event=>{
   const next=event.key==='Home'?tabs[0]:event.key==='End'?tabs.at(-1):tabs[(index+(event.key==='ArrowRight'?1:tabs.length-1))%tabs.length];
   loadExample(next.dataset.scenario);next.focus();
 });
+function reopenMarkdown() {
+  const source=NoteModel.markdown(view.state.doc);
+  view.updateState(EditorState.create({doc:NoteModel.parse(source),plugins:plugins()}));
+  refresh();view.focus();status('Reopened the Markdown in a fresh editor state');
+}
 window.lunaPrototype={
-  command,
+  command,resolve:links.resolve,
+  openMarkdown(source) {
+    examples.import={title:'Try imported Markdown',source,instructions:'This is an in-memory copy of the file you chose. Export Markdown writes a separate file.',steps:[['Reopen Markdown',reopenMarkdown]]};
+    let tab=document.getElementById('tab-import');
+    if(!tab){tab=document.createElement('button');tab.id='tab-import';tab.role='tab';tab.dataset.scenario='import';tab.textContent='Imported Markdown';tab.setAttribute('aria-controls','walkthrough');document.querySelector('.scenarios').append(tab);}
+    loadExample('import');
+  },
+  get metadata(){return links.metadata;},
   get view(){return view;},
   get state(){return NoteModel.describe(view.state);},
   get markdown(){return NoteModel.markdown(view.state.doc);},
@@ -151,7 +141,7 @@ window.lunaPrototype={
       instructions:'This is an editable copy of your current note. Try a normal writing sequence, then compare the Markdown. Your original stays in Luna’s main window.',
       steps:[['Select the whole copy',()=>command('selectAll')],['Undo',()=>command('undo')]]};
     document.getElementById('tab-copy').hidden=false;
-    loadExample('bullets');
+    loadExample('urls');
   }
 };
-loadExample('bullets');
+loadExample('urls');

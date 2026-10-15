@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https: http:; frame-src https: http:; form-action 'none'; base-uri 'none'">
 <title>ProseMirror trial — Luna</title>
 <style>/* STYLES */</style>
 </head>
 <body>
 <header>
   <h1>ProseMirror trial</h1>
-  <p>Does editing feel predictable? Try arrows, selections, Return, Backspace, and Undo.</p>
+  <p>Paste a URL, change its display, and keep writing. Try selection, Undo, and reopening Markdown.</p>
   <div class="scenarios" role="tablist" aria-label="Writing examples">
-    <button role="tab" id="tab-bullets" aria-selected="true" aria-controls="walkthrough" data-scenario="bullets">Bullet boundary</button>
+    <button role="tab" id="tab-urls" aria-selected="true" aria-controls="walkthrough" data-scenario="urls">URL workflow</button>
+    <button role="tab" id="tab-bullets" aria-selected="false" aria-controls="walkthrough" data-scenario="bullets" tabindex="-1">Bullet boundary</button>
     <button role="tab" id="tab-nested" aria-selected="false" aria-controls="walkthrough" data-scenario="nested" tabindex="-1">Nested lists</button>
     <button role="tab" id="tab-rich" aria-selected="false" aria-controls="walkthrough" data-scenario="rich" tabindex="-1">Rich blocks</button>
     <button role="tab" id="tab-copy" aria-selected="false" aria-controls="walkthrough" data-scenario="copy" tabindex="-1" hidden>Copy of your note</button>
@@ -27,6 +28,7 @@
       <span class="toolbar-break" aria-hidden="true"></span>
       <button data-command="bullets">Bullets</button>
       <button data-command="numbers">Numbers</button>
+      <button data-command="showLink">Display link…</button>
       <span class="toolbar-break" aria-hidden="true"></span>
       <button data-command="undo">Undo</button>
       <button data-command="redo">Redo</button>
@@ -34,8 +36,8 @@
     <div id="editor"></div>
   </section>
   <aside aria-label="Current editing state">
-    <section id="walkthrough" role="tabpanel" aria-labelledby="tab-bullets">
-      <h2>Try the original issue</h2>
+    <section id="walkthrough" role="tabpanel" aria-labelledby="tab-urls">
+      <h2>Paste and change a URL</h2>
       <p id="instructions"></p>
       <div id="steps" class="steps"></div>
     </section>
@@ -48,11 +50,18 @@
       <h2>Markdown from this copy</h2>
       <p class="source-note">Spacing and syntax may be normalized in this trial.</p>
       <pre id="markdown" aria-label="Current Markdown source"></pre>
+      <div class="steps">
+        <button data-command="reopenMarkdown">Reopen Markdown</button>
+        <button data-command="exportMarkdown">Export Markdown…</button>
+        <button data-command="importMarkdown">Open Markdown…</button>
+      </div>
       <details><summary>Document structure</summary><pre id="structure"></pre></details>
     </section>
   </aside>
 </main>
-<footer><span>Scratch copy · Changes stay in this window</span><span id="build"></span></footer>
+<footer><span>Scratch copy · Export to keep your changes</span><span id="build"></span></footer>
+<div id="link-popover" role="dialog" aria-label="Link display" hidden></div>
+<p id="workflow-status" role="status" aria-live="polite"></p>
 <script>/* SCRIPT */</script>
 </body>
 </html>
