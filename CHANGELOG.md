@@ -1,6 +1,6 @@
 # Luna release notes
 
-## Unreleased
+## 0.14.0 — 2026-10-15
 
 - Live View now uses ProseMirror for editing, selection, lists, and Undo.
 - Keeps URL paste, Mentions, Bookmarks, Embeds, media attachments, task lists, slash commands, and selection formatting in the saved editor.

@@ -2,6 +2,16 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-10-15 — Luna 0.14.0 release (in progress)
+
+**Request:** Ship the saved ProseMirror Live View migration.
+
+**Release preparation:** Promote Unreleased highlights to 0.14.0, update the app version, rerun the Swift and release-tool checks, and package a regular build. Fast-forward main from the migration branch, publish a new immutable v0.14.0 tag through the existing signed release workflow, verify public artifacts, and exercise the installed Sparkle update. Existing unrelated icon assets and TODO.md stay outside the release commit. Note recovery is backed up privately before relaunches; compare note IDs and text/language fingerprints afterward.
+
+**Local verification:** All 125 Swift tests (110 Luna + 15 LunaCore), all four release-tool tests, release version ordering/highlights, regular packaging, strict signatures, and `git diff --check` pass. Opened regular 0.14.0 build **20261015144008**, executable UUID **6B91C4AA-5F8E-3FDC-AB63-BE2EE864DF59** matching the current worktree build, with no development flag or footer build ID. All three protected note fingerprints match after graceful quit/relaunch. Logs: `/tmp/luna-0140-swift-tests.log`, `/tmp/luna-0140-release-tests.log`, `/tmp/luna-0140-regular-build.log`.
+
+**Status:** Local release preparation verified; publication and installed-update verification pending. Implementation details and known limitations are in the following migration entry.
+
 ## 2026-10-15 — Replace saved Live View with ProseMirror
 
 **Request:** Replace the existing Live View editor with ProseMirror and bring over the remaining functionality after evaluating the separate trial.
