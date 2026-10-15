@@ -1,5 +1,9 @@
 # Luna release notes
 
+## 0.13.3 — 2026-10-14
+
+- Press Left Arrow at the start of a list item to move to the end of the previous line in Live View.
+
 ## 0.13.2 — 2026-10-14
 
 - Press ⌘⇧V to paste plain text without converting URLs into rich links. Available in Live View, Source, and Plain Text.

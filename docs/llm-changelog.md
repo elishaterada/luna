@@ -2,6 +2,34 @@
 
 This log starts with the September 13, 2026 editor changes. Earlier shipped features are summarized in `CHANGELOG.md`; earlier implementation details have not been backfilled. Entries describe verified behavior and decisions, with files as navigation points rather than a diff transcript.
 
+## 2026-10-14 — Luna 0.13.3 release
+
+**Request:** Ship the approved Left Arrow list-navigation fix.
+
+**Implementation:** Version 0.13.3 packages the prefix-crossing correction and four native-navigation regressions documented below. Updated bundle marketing metadata and promoted the user-facing highlight in `CHANGELOG.md`. Regular builds omit the development footer ID. Unrelated untracked notes and icon assets are excluded.
+
+**Files:** `Resources/Info.plist`, `CHANGELOG.md`, `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/ListNavigationTests.swift`, and this log.
+
+**Local verification:** All **166 Swift tests** (151 Luna, 15 LunaCore), four release-tool checks, version-order and exact-note validation, regular packaging, strict nested signatures, and `git diff --check` passed. Opened this worktree’s regular 0.13.3 candidate **20261015045844**, executable UUID **C4E203CA-154F-308B-BCA8-979466B7D1C3** matching `.build/release/Luna`. Its footer omits the development build ID; only the current-worktree copy is running. Native Left from the start of the user’s second bullet moved visibly to the end of “Filipino dish.” All three latest fully flushed user-note ID/text/language fingerprints remain intact, including edits made after feature approval. Logs: `/tmp/luna-0133-swift-tests.log`, `/tmp/luna-0133-release-tests.log`, `/tmp/luna-0133-build.log`.
+
+**Release verification / status:** Pending publication, public artifact checks, and installed Sparkle-update verification.
+
+## 2026-10-14 — Left Arrow crosses a Live View list prefix
+
+**Request:** From the next empty bullet after “Filipino dish,” Left Arrow should move to the end of the previous bullet's body.
+
+**Diagnosis:** The native AppKit-key regression failed both for the screenshot layout and the minimal two-item list: selection remained at the empty item's body anchor, and subsequent typing landed in that item. Removing only the `selectionchange` normalizer in a temporary fixture probe exposed WebKit's intermediate selection inside the current marker; the normalizer then snapped that position back to the body. This confirms a navigation/protection loop, rather than a caret-drawing error. Original failures: `/tmp/luna-list-left-red.log`, `/tmp/luna-list-left-minimal-red.log`; probe: `/tmp/luna-list-left-normalizer-probe.log`. The probe was removed.
+
+**Implementation:** For an unmodified Left Arrow with a collapsed caret at a Live View list body's start, use WebKit's native paragraph-boundary and character movement to cross the entire prefix and indentation before selection normalization. Restore the original position when there is no preceding editable line. Other caret positions, noncollapsed selections, modifier keys, composition, and focused link fields retain their existing handling. No text/Undo transaction is created by navigation.
+
+**Files:** `Sources/Luna/MediaNoteView.swift`, `Tests/LunaTests/ListNavigationTests.swift`, `CHANGELOG.md`, and this log.
+
+**Focused verification:** Four regression tests pass, including native Left/typing on the original and minimal fixture, empty/nonempty items across nine standard/legacy/numbered/checkbox/indented prefixes, native Return continuation, Undo/Redo, exact source/recovery, first-item boundaries, ordinary character movement, Shift selection, and visible caret. Test-harness corrections use WebKit's native Undo command (a standalone test window has no application Cmd+Z menu routing) and scope repeated JavaScript fixture variables; no runtime changes were needed for those fixture failures. Log: `/tmp/luna-list-navigation-expanded.log`.
+
+**Full verification / handoff:** All **166 Swift tests** (151 Luna, 15 LunaCore), four release-tool tests, development packaging, strict nested signatures, and `git diff --check` passed. Opened this worktree’s `dist/Luna.app`, `CFBundleVersion` **20261015045457**; the visible footer matches, and executable UUID **C4E203CA-154F-308B-BCA8-979466B7D1C3** matches `.build/release/Luna`. Gracefully quit installed `/Applications/Luna.app` **20261014213642** before relaunch; only the current-worktree copy is running. In the actual Updates note, native Command–Down placed the caret on the empty bullet and one native Left moved visibly to the end of “Filipino dish.” No user-note text was edited. All three latest fully flushed note ID/text/language fingerprints match the protected baseline after relaunch and native navigation. Left Updates open with that caret for review. Private preservation backups were removed after comparison. Logs: `/tmp/luna-list-left-suite.log`, `/tmp/luna-list-left-release-tests.log`, `/tmp/luna-list-left-build.log`.
+
+**Limitations / release status:** Local implementation; not published. Modified navigation, bidirectional text, and movement across separate rich-note blocks retain existing behavior.
+
 ## 2026-10-14 — Luna 0.13.2 release
 
 **Request:** Ship the approved ⌘⇧V plain-text paste feature.

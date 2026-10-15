@@ -554,6 +554,19 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
     });
     document.addEventListener('keydown',e=>{
       if(!e.defaultPrevented&&!e.isComposing)normalizeListCaret();
+      if(!e.defaultPrevented&&e.key==='ArrowLeft'&&!e.isComposing&&!e.altKey&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&document.activeElement?.closest('.text')) {
+        const line=currentLine();
+        if(line&&/^([ \t]*)([-*+•☐☑]|\d+\.) $/.test(line.prefix)) {
+          // The marker's protected caret snaps native Left back into this body.
+          // Cross the entire paragraph prefix before native selectionchange runs.
+          const selection=getSelection(),original=selection.getRangeAt(0).cloneRange();
+          selection.modify('move','backward','paragraphboundary');
+          selection.modify('move','backward','character');
+          const moved=currentLine();
+          if(!moved||moved.start===line.start){selection.removeAllRanges();selection.addRange(original);}
+          e.preventDefault();return;
+        }
+      }
       if(!e.defaultPrevented&&e.key==='Backspace'&&!e.isComposing&&!e.altKey&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey) {
         const insideMarker=getSelection().anchorNode?.parentElement?.closest('.list-marker');
         const line=insideMarker?null:currentLine(),match=line?.prefix.match(/^([ \t]*)([-*+•☐☑]|\d+\.) $/);
