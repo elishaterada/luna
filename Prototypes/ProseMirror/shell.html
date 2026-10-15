@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
+<title>ProseMirror trial — Luna</title>
+<style>/* STYLES */</style>
+</head>
+<body>
+<header>
+  <h1>ProseMirror trial</h1>
+  <p>Does editing feel predictable? Try arrows, selections, Return, Backspace, and Undo.</p>
+  <div class="scenarios" role="tablist" aria-label="Writing examples">
+    <button role="tab" id="tab-bullets" aria-selected="true" aria-controls="walkthrough" data-scenario="bullets">Bullet boundary</button>
+    <button role="tab" id="tab-nested" aria-selected="false" aria-controls="walkthrough" data-scenario="nested" tabindex="-1">Nested lists</button>
+    <button role="tab" id="tab-rich" aria-selected="false" aria-controls="walkthrough" data-scenario="rich" tabindex="-1">Rich blocks</button>
+    <button role="tab" id="tab-copy" aria-selected="false" aria-controls="walkthrough" data-scenario="copy" tabindex="-1" hidden>Copy of your note</button>
+  </div>
+</header>
+<main>
+  <section class="writing" aria-label="Writing playground">
+    <div class="toolbar" role="toolbar" aria-label="Formatting and history">
+      <button data-command="bold" title="Bold (⌘B)" aria-label="Bold"><strong>B</strong></button>
+      <button data-command="italic" title="Italic (⌘I)" aria-label="Italic"><em>I</em></button>
+      <button data-command="code" title="Inline code (⌘⇧C)">Code</button>
+      <span class="toolbar-break" aria-hidden="true"></span>
+      <button data-command="bullets">Bullets</button>
+      <button data-command="numbers">Numbers</button>
+      <span class="toolbar-break" aria-hidden="true"></span>
+      <button data-command="undo">Undo</button>
+      <button data-command="redo">Redo</button>
+    </div>
+    <div id="editor"></div>
+  </section>
+  <aside aria-label="Current editing state">
+    <section id="walkthrough" role="tabpanel" aria-labelledby="tab-bullets">
+      <h2>Try the original issue</h2>
+      <p id="instructions"></p>
+      <div id="steps" class="steps"></div>
+    </section>
+    <section class="state">
+      <h2>Cursor &amp; selection</h2>
+      <p id="selection" aria-live="polite"></p>
+      <p id="history-state"></p>
+    </section>
+    <section class="markdown">
+      <h2>Markdown from this copy</h2>
+      <p class="source-note">Spacing and syntax may be normalized in this trial.</p>
+      <pre id="markdown" aria-label="Current Markdown source"></pre>
+      <details><summary>Document structure</summary><pre id="structure"></pre></details>
+    </section>
+  </aside>
+</main>
+<footer><span>Scratch copy · Changes stay in this window</span><span id="build"></span></footer>
+<script>/* SCRIPT */</script>
+</body>
+</html>

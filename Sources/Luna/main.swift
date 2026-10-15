@@ -7,6 +7,7 @@ let processStarted = ProcessInfo.processInfo.systemUptime
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var workspace: Workspace!
     var commandSettings: CommandLineSettings!
+    private var proseMirrorPrototype: ProseMirrorPrototype?
     lazy var updates = UpdateController { [weak self] in self?.workspace?.flushAllRecovery() ?? false }
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -41,17 +42,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(URL(string: "https://buymeacoffee.com/elishaterada")!)
     }
     @objc func selectAllContent(_ sender: Any?) {
+        if routePrototype("selectAll") { return }
         guard let workspace else { return }
         let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? workspace
         active.selectAllContent(sender)
     }
     @objc func pastePlainText(_ sender: Any?) {
+        if let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow { prototype.pastePlainText(); return }
         guard let workspace else { return }
         let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? workspace
         active.pastePlainText(sender)
     }
+    private func routePrototype(_ command: String) -> Bool {
+        guard let prototype = proseMirrorPrototype, prototype.window === NSApp.keyWindow else { return false }
+        prototype.command(command); return true
+    }
+    @objc func undoContent(_ sender: Any?) {
+        if !routePrototype("undo") { NSApp.sendAction(Selector(("undo:")), to: nil, from: sender) }
+    }
+    @objc func redoContent(_ sender: Any?) {
+        if !routePrototype("redo") { NSApp.sendAction(Selector(("redo:")), to: nil, from: sender) }
+    }
+    @objc func boldContent(_ sender: Any?) {
+        if !routePrototype("bold") { NSApp.sendAction(#selector(Workspace.markdownBold), to: nil, from: sender) }
+    }
+    @objc func italicContent(_ sender: Any?) {
+        if !routePrototype("italic") { NSApp.sendAction(#selector(Workspace.markdownItalic), to: nil, from: sender) }
+    }
+    @objc func codeContent(_ sender: Any?) {
+        if !routePrototype("code") { NSApp.sendAction(#selector(Workspace.markdownCode), to: nil, from: sender) }
+    }
+    @objc func tryProseMirror() {
+        if let prototype = proseMirrorPrototype, prototype.window?.isVisible == true { prototype.showWindow(nil); return }
+        guard let workspace else { return }
+        let active = workspace.session.windows.allObjects.first { $0.window === NSApp.keyWindow } ?? workspace
+        let prototype = ProseMirrorPrototype(source: active.editor.string, fontSize: active.fontSize)
+        proseMirrorPrototype = prototype
+        prototype.showWindow(nil)
+    }
     func buildMenu() {
         let menu = NSMenu()
+        let prototypeEnabled = Bundle.main.object(forInfoDictionaryKey: "LunaDevelopmentBuild") as? Bool == true
         func submenu(_ title: String) -> NSMenu { let item = NSMenuItem(); item.title = title; let sub = NSMenu(title: title); item.submenu = sub; menu.addItem(item); return sub }
         func item(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command, target: AnyObject? = nil) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key); item.keyEquivalentModifierMask = modifiers; item.target = target; menu.addItem(item)
@@ -79,7 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item(note, "Open in New Window", #selector(Workspace.openClickedNoteInWindow), "o", [.command, .shift])
         item(note, "Delete Note…", #selector(Workspace.deleteNote), "\u{7f}")
         let edit = submenu("Edit")
-        item(edit, "Undo", Selector(("undo:")), "z"); item(edit, "Redo", Selector(("redo:")), "z", [.command, .shift])
+        item(edit, "Undo", prototypeEnabled ? #selector(undoContent) : Selector(("undo:")), "z", target: prototypeEnabled ? self : nil)
+        item(edit, "Redo", prototypeEnabled ? #selector(redoContent) : Selector(("redo:")), "z", [.command, .shift], target: prototypeEnabled ? self : nil)
         edit.addItem(.separator()); item(edit, "Cut", #selector(NSText.cut(_:)), "x"); item(edit, "Copy", #selector(NSText.copy(_:)), "c")
         item(edit, "Paste", #selector(NSText.paste(_:)), "v")
         item(edit, "Paste as Plain Text", #selector(pastePlainText), "v", [.command, .shift], target: self)
@@ -87,9 +119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(.separator())
         let find = NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f"); find.tag = NSTextFinder.Action.showFindInterface.rawValue; edit.addItem(find)
         let format = submenu("Format")
-        item(format, "Bold", #selector(Workspace.markdownBold), "b")
-        item(format, "Italic", #selector(Workspace.markdownItalic), "i")
-        item(format, "Inline Code", #selector(Workspace.markdownCode), "c", [.command, .shift])
+        item(format, "Bold", prototypeEnabled ? #selector(boldContent) : #selector(Workspace.markdownBold), "b", target: prototypeEnabled ? self : nil)
+        item(format, "Italic", prototypeEnabled ? #selector(italicContent) : #selector(Workspace.markdownItalic), "i", target: prototypeEnabled ? self : nil)
+        item(format, "Inline Code", prototypeEnabled ? #selector(codeContent) : #selector(Workspace.markdownCode), "c", [.command, .shift], target: prototypeEnabled ? self : nil)
         let view = submenu("View")
         item(view, "Toggle Notes", #selector(Workspace.toggleSidebar), "s", [.command, .option])
         item(view, "Source and Preview", #selector(Workspace.toggleSplitPreview), "m", [.command, .option])
@@ -98,6 +130,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.addItem(.separator()); item(view, "Larger Text", #selector(Workspace.larger), "=")
         item(view, "Smaller Text", #selector(Workspace.smaller), "-")
         item(view, "Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
+        if prototypeEnabled {
+            view.addItem(.separator()); item(view, "Try ProseMirror…", #selector(tryProseMirror), target: self)
+        }
         let window = submenu("Window"); item(window, "Minimize", #selector(NSWindow.performMiniaturize(_:)), "m")
         item(window, "Zoom", #selector(NSWindow.performZoom(_:)))
         NSApp.windowsMenu = window; NSApp.mainMenu = menu

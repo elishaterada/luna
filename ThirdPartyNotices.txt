@@ -15,3 +15,9 @@ Marked 17.0.1 (MIT)
 https://github.com/markedjs/marked
 Copyright (c) 2018+, MarkedJS; Copyright (c) 2011-2018, Christopher Jeffrey.
 License bundled in Luna_Luna.bundle/Resources/Marked-LICENSE.txt.
+
+ProseMirror prototype (MIT)
+https://prosemirror.net/
+Development-only editor trial. Exact package versions and dependency locks are in
+Prototypes/ProseMirror/package.json and package-lock.json. The full runtime package
+licenses are bundled in Luna_Luna.bundle/Resources/ProseMirrorPrototype-LICENSES.txt.
