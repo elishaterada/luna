@@ -158,6 +158,13 @@ HTTPS embeds use isolated frames. Luna resolves iframe-based and photo oEmbed re
 
 Type bullet, numbered, or checkbox prefixes to format lists in plain-text and Markdown notes. Return continues a list and Return on an empty item ends it. List markers are saved as ordinary text. Paste a URL to choose plain text, linked text, a preview chip with a fetched page title, or a live iframe embed. Sites can disallow embedding; unavailable preview titles fall back to the domain.
 
+Markdown Live View uses ProseMirror's standard list editing. Backspace on an empty
+second item removes its bullet and keeps a paragraph inside the preceding item;
+another Backspace moves to the preceding text end. Use Return on an empty item to
+exit the list. Tab and Shift-Tab indent and outdent list items; outside a list,
+Tab moves focus instead of inserting spaces. Shift-Return inserts a line break,
+and new tasks start unchecked.
+
 The note header shows its last updated date and time to the minute. Each white directory segment opens that folder in Finder and underlines independently on hover. Clicking blank space below a live note places the cursor at the end of the last line.
 
 For implementation decisions and verified changes, see [the LLM change log](llm-changelog.md).

@@ -180,7 +180,7 @@ final class MediaNoteView: FileDropWebView, WKNavigationDelegate {
             guard text.unicodeScalars.allSatisfy({ $0.value >= 32 && $0.value != 127 && !(0xF700...0xF8FF).contains($0.value) }) else { return false }
             key = "text"
         }
-        pendingInput.append(["key": key,"text": text]); return true
+        pendingInput.append(["key": key,"text": text,"shift": event.modifierFlags.contains(.shift) ? "true" : "false"]); return true
     }
     fileprivate func receive(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any], body["page"] as? String == pageID,

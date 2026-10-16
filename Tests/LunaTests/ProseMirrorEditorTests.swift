@@ -97,14 +97,81 @@ final class ProseMirrorEditorTests: XCTestCase {
         try await key("z", code: 6, flags: .command, workspace)
         try await eventually("Updates:\n- Filipino dish\n- ", workspace)
     }
-    @MainActor func testNativeListContinuationExitAndPrefixBackspace() async throws {
+    @MainActor func testNativeListContinuationAndDefaultBackspace() async throws {
         let workspace = try await workspace("- A")
         try await select(4, workspace)
         try await key("\r", code: 36, workspace)
         try await eventually("- A\n- ", workspace)
         try await key("\u{7f}", code: 51, workspace)
         try await key("B", code: 11, workspace)
+        try await eventually("- A\n\n  B", workspace)
+    }
+    @MainActor func testNativeEnterExitsEmptyListItem() async throws {
+        let workspace = try await workspace("- A\n- ")
+        try await select(8, workspace)
+        try await key("\r", code: 36, workspace)
+        try await eventually("- A\n", workspace)
+        try await key("B", code: 11, workspace)
         try await eventually("- A\nB", workspace)
+    }
+    @MainActor func testNativeBackspaceAfterEmptyBulletExitJoinsPreviousItem() async throws {
+        let workspace = try await workspace("- A\n- ")
+        try await select(8, workspace)
+        try await key("\u{7f}", code: 51, workspace)
+        // Stock Backspace joins into the preceding item as an empty paragraph;
+        // it does not lift a standalone paragraph out of the list.
+        let shape = try await js("return [lunaEditor.state.counts.list_item,lunaEditor.state.counts.paragraph,lunaEditor.view.state.selection.from]", workspace) as? [Int]
+        XCTAssertEqual(shape, [1, 2, 6])
+        try await key("\u{7f}", code: 51, workspace)
+        try await eventually("- A", workspace)
+        let caret = try await js("return lunaEditor.view.state.selection.from", workspace) as? Int
+        XCTAssertEqual(caret, 4)
+        try await key("!", code: 18, workspace)
+        try await eventually("- A!", workspace)
+    }
+    @MainActor func testEmptyListExitJoiningRetainsMarkersAndHistory() async throws {
+        for marker in ["*", "+", "•", "1."] {
+            let original = "\(marker) A\n\(marker) "
+            let workspace = try await workspace(original)
+            try await select(8, workspace)
+            try await key("\u{7f}", code: 51, workspace)
+            let items = try await js("return lunaEditor.state.counts.list_item", workspace) as? Int
+            XCTAssertEqual(items, 1)
+            try await key("\u{7f}", code: 51, workspace)
+            try await eventually("\(marker) A", workspace)
+            let caret = try await js("return lunaEditor.view.state.selection.from", workspace) as? Int
+            XCTAssertEqual(caret, 4, marker)
+            let undoDepth = try await js("return lunaEditor.history.undo", workspace) as? Int
+            let depth = try XCTUnwrap(undoDepth)
+            XCTAssertGreaterThan(depth, 0)
+            for _ in 0..<depth { _ = try await js("lunaEditor.command('undo')", workspace) }
+            try await eventually(original, workspace)
+            for _ in 0..<depth { _ = try await js("lunaEditor.command('redo')", workspace) }
+            try await eventually("\(marker) A", workspace)
+            XCTAssertTrue(workspace.flushRecovery())
+            XCTAssertEqual(try workspace.store.load().first?.text, "\(marker) A")
+        }
+    }
+    @MainActor func testContinuedBulletExitJoinsPreviousBodyWithNativeAndQueuedKeys() async throws {
+        for queued in [false, true] {
+            let original = "Updates:\n- Filipino dish"
+            let workspace = try await workspace(original)
+            let end = try await js("let end=0;lunaEditor.view.state.doc.descendants((n,p)=>{if(n.isText)end=p+n.nodeSize});return end", workspace) as? Int
+            try await select(try XCTUnwrap(end), workspace)
+            try await key("\r", code: 36, workspace)
+            try await eventually(original + "\n- ", workspace)
+            if queued {
+                _ = try await js("await lunaEditor.focus([{key:'Backspace'},{key:'Backspace'}])", workspace)
+            } else {
+                try await key("\u{7f}", code: 51, workspace)
+                let items = try await js("return lunaEditor.state.counts.list_item", workspace) as? Int
+                XCTAssertEqual(items, 1)
+                try await key("\u{7f}", code: 51, workspace)
+            }
+            try await eventually(original, workspace)
+            try await key("!", code: 18, workspace)
+            try await eventually(original + "!", workspace)
+        }
     }
     @MainActor func testNativeNumberedListAndBulletInputRules() async throws {
         let workspace = try await workspace("")
@@ -124,6 +191,110 @@ final class ProseMirrorEditorTests: XCTestCase {
             try await waitForModel("lunaEditor.view.state.doc.textContent === '\(typed)'", workspace)
         }
         try await eventually("1. test\n2. next", workspace)
+    }
+    @MainActor func testNativeAndQueuedKeysShareDefaultEditingBehavior() async throws {
+        let cases: [(String, Int, String, UInt16, String, NSEvent.ModifierFlags)] = [
+            ("- A\n- B", 8, "Backspace", 51, "\u{7f}", []),
+            ("- A\n  - B\n  - ", 13, "Backspace", 51, "\u{7f}", []),
+            ("A🌙B", 4, "Backspace", 51, "\u{7f}", []),
+            ("A👨‍👩‍👧‍👦B", 13, "Backspace", 51, "\u{7f}", []),
+            ("AB", 2, "Delete", 117, "\u{F728}", []),
+            ("A[Mention](https://example.com)B", 3, "Backspace", 51, "\u{7f}", []),
+            ("AB", 2, "Enter", 36, "\r", [.shift]),
+            ("```\nAB\n```", 2, "Enter", 36, "\r", []),
+            ("- [x] Completed", 12, "Enter", 36, "\r", []),
+        ]
+        for (original, position, name, code, characters, flags) in cases {
+            var outcomes: [String] = []
+            for queued in [false, true] {
+                let workspace = try await workspace(original)
+                try await select(position, workspace)
+                if queued {
+                    _ = try await workspace.mediaView.callAsyncJavaScript(
+                        "await lunaEditor.focus([{key:name,shift:shift}])",
+                        arguments: ["name": name, "shift": flags.contains(.shift) ? "true" : "false"],
+                        in: nil, contentWorld: .page)
+                } else {
+                    try await key(characters, code: code, flags: flags, workspace)
+                }
+                let outcome = try await js("return JSON.stringify({source:lunaEditor.source,selection:lunaEditor.state.selection,counts:lunaEditor.state.counts})", workspace) as? String
+                outcomes.append(try XCTUnwrap(outcome))
+            }
+            XCTAssertEqual(outcomes[0], outcomes[1], "\(name) in \(original)")
+        }
+    }
+    @MainActor func testQueuedTypingUsesInputRulesAndBackspaceUndoesTheRule() async throws {
+        for queued in [false, true] {
+            let workspace = try await workspace("")
+            try await select(1, workspace)
+            if queued {
+                _ = try await js("await lunaEditor.focus([{key:'text',text:'-'},{key:'text',text:' '}])", workspace)
+            } else {
+                try await key("-", workspace)
+                try await key(" ", workspace)
+            }
+            let list = try await js("return lunaEditor.view.state.doc.firstChild.type.name", workspace) as? String
+            XCTAssertEqual(list, "bullet_list")
+            if queued {
+                _ = try await js("await lunaEditor.focus([{key:'Backspace'}])", workspace)
+            } else {
+                try await key("\u{7f}", code: 51, workspace)
+            }
+            let literal = try await js("return [lunaEditor.view.state.doc.firstChild.type.name,lunaEditor.view.state.doc.textContent]", workspace) as? [String]
+            XCTAssertEqual(literal, ["paragraph", "- "])
+        }
+    }
+    @MainActor func testQueuedSlashChoiceAndDefaultModifiedEnter() async throws {
+        let workspace = try await workspace("")
+        try await select(1, workspace)
+        _ = try await js("await lunaEditor.focus([{key:'text',text:'/'},{key:'text',text:'h'},{key:'text',text:'2'},{key:'Enter'},{key:'text',text:'Heading'}])", workspace)
+        try await eventually("## Heading", workspace)
+        let slash = try await self.workspace("/h2")
+        try await select(4, slash)
+        try await key("\r", code: 36, flags: .shift, slash)
+        let type = try await js("return lunaEditor.view.state.doc.firstChild.type.name", slash) as? String
+        XCTAssertEqual(type, "paragraph")
+        let breaks = try await js("return lunaEditor.state.counts.hard_break", slash) as? Int
+        XCTAssertEqual(breaks, 1)
+    }
+    @MainActor func testQueuedBrowserDeletionsFinishBeforeLaterTypingAndSnapshots() async throws {
+        let workspace = try await workspace("A🌙B")
+        try await select(4, workspace)
+        _ = try await js("await lunaEditor.focus([{key:'Backspace'},{key:'Backspace'},{key:'text',text:'X'},{key:'Delete'},{key:'text',text:'Y'}])", workspace)
+        try await eventually("XY", workspace)
+        let flushed = await workspace.mediaView.flushChanges()
+        XCTAssertTrue(flushed)
+        XCTAssertTrue(workspace.flushRecovery())
+        XCTAssertEqual(try workspace.store.load().first?.text, "XY")
+    }
+    @MainActor func testNativePendingInputRetainsShiftReturn() async throws {
+        let workspace = try await workspace("AB")
+        try await select(2, workspace)
+        let window = try XCTUnwrap(workspace.window)
+        // Enqueue a native command and send the key in the same main-actor
+        // turn, before its focus/replay task can run.
+        workspace.mediaView.command("showLink")
+        window.sendEvent(try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)))
+        try await waitForModel("lunaEditor.state.counts.hard_break === 1", workspace)
+        let paragraphs = try await js("return lunaEditor.state.counts.paragraph", workspace) as? Int
+        XCTAssertEqual(paragraphs, 1)
+        let text = try await js("return lunaEditor.view.state.doc.textContent", workspace) as? String
+        XCTAssertEqual(text, "AB")
+    }
+    @MainActor func testTabOnlyAliasesStockListIndentation() async throws {
+        let workspace = try await workspace("- A\n- B")
+        try await select(8, workspace)
+        try await key("\t", code: 48, workspace)
+        try await eventually("- A\n  - B", workspace)
+        try await key("\t", code: 48, flags: .shift, workspace)
+        try await eventually("- A\n- B", workspace)
+        let prose = try await self.workspace("Prose")
+        try await select(1, prose)
+        let consumed = try await js("const event=new KeyboardEvent('keydown',{key:'Tab',keyCode:9,bubbles:true,cancelable:true});return !lunaEditor.view.dom.dispatchEvent(event)", prose) as? Bool
+        XCTAssertEqual(consumed, false)
+        try await eventually("Prose", prose)
     }
     @MainActor func testSelectedListIndentOutdentAndAtomicUndo() async throws {
         let workspace = try await workspace("- A\n- B\n- C")

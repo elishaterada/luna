@@ -19,12 +19,6 @@ import {
   selectAll,
   setBlockType,
   wrapIn,
-  chainCommands,
-  exitCode,
-  joinBackward,
-  joinForward,
-  deleteSelection,
-  baseKeymap,
 } from "prosemirror-commands";
 import {
   sinkListItem,
@@ -63,19 +57,6 @@ const commands = {
   selectAll,
   indent: sinkListItem(schema.nodes.list_item),
   outdent: liftListItem(schema.nodes.list_item),
-  continue: (state, dispatch, view) => {
-    const $pos = state.selection.$from,
-      attrs =
-        $pos.depth >= 2 &&
-        $pos.node(-1).type === schema.nodes.list_item &&
-        $pos.node(-1).attrs;
-    return splitListItem(
-      schema.nodes.list_item,
-      attrs?.checked !== null && attrs
-        ? { ...attrs, checked: false }
-        : undefined,
-    )(state, dispatch, view);
-  },
   text: setBlockType(schema.nodes.paragraph),
   h1: setBlockType(schema.nodes.heading, { level: 1 }),
   h2: setBlockType(schema.nodes.heading, { level: 2 }),
@@ -223,13 +204,17 @@ function refresh() {
     position(toolbar, selection.to);
   }
 }
-function backward(state, dispatch, editor) {
-  const { $from, empty } = state.selection;
-  if (!empty || $from.parentOffset !== 0) return false;
-  // Empty list items become an ordinary writing line in one model transaction.
-  if ($from.depth >= 2 && $from.node(-1).type === schema.nodes.list_item)
-    return liftListItem(schema.nodes.list_item)(state, dispatch, editor);
-  return false;
+// Tasks extend the stock schema. All other Enter behavior belongs to the
+// upstream keymaps, including ordinary list splitting and empty-item exit.
+function splitTaskItem(state, dispatch, editor) {
+  const { $from } = state.selection;
+  const item = $from.depth >= 2 ? $from.node(-1) : null;
+  if (item?.type !== schema.nodes.list_item || item.attrs.checked === null)
+    return false;
+  return splitListItem(schema.nodes.list_item, {
+    ...item.attrs,
+    checked: false,
+  })(state, dispatch, editor);
 }
 function mediaView(node) {
   const dom = document.createElement(node.isInline ? "span" : "figure");
@@ -318,7 +303,15 @@ const writing = new Plugin({
       return DecorationSet.create(state.doc, decorations);
     },
     handleKeyDown(_view, event) {
-      if (event.isComposing || view.composing) return false;
+      if (
+        event.isComposing ||
+        view.composing ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey
+      )
+        return false;
       if (
         !slashMenu.hidden &&
         ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)
@@ -382,14 +375,12 @@ function plugins() {
     writing,
     links.plugin,
     listRules,
+    // Intentional additions only. Never replace the upstream deletion or
+    // navigation chains; queued native input dispatches through these too.
     keymap({
-      Tab: chainCommands(commands.indent, (state, dispatch) => {
-        if (dispatch) dispatch(state.tr.insertText("    "));
-        return true;
-      }),
-      Enter: commands.continue,
+      Tab: commands.indent,
+      Enter: splitTaskItem,
       "Shift-Tab": commands.outdent,
-      Backspace: backward,
       "Mod-k": () => {
         addLink();
         return true;
@@ -595,7 +586,7 @@ window.lunaEditor = {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.style.setProperty("--editor-size", size + "px");
   },
-  focus(input = []) {
+  async focus(input = []) {
     if (!view) return false;
     if (
       !input.length ||
@@ -603,7 +594,6 @@ window.lunaEditor = {
     )
       view.focus();
     for (const item of input) {
-      const state = view.state;
       if (item.key === "command") {
         command(item.name, item.text);
         continue;
@@ -612,60 +602,45 @@ window.lunaEditor = {
         insertSnippet(item.text, item.menu === "true");
         continue;
       }
-      const field = document.activeElement;
-      if (
-        field?.matches("input:not([type=checkbox]),textarea") &&
-        item.key !== "text"
-      ) {
-        if (item.key === "Enter") field.form?.requestSubmit();
-        else
-          document.execCommand(
-            item.key === "Backspace" ? "delete" : "forwardDelete",
-          );
-        continue;
-      }
+      const field = document.activeElement?.matches(
+        "input:not([type=checkbox]),textarea",
+      )
+        ? document.activeElement
+        : null;
       if (item.key === "text") {
-        if (
-          document.activeElement?.matches("input:not([type=checkbox]),textarea")
-        )
-          document.execCommand("insertText", false, item.text);
-        else view.dispatch(state.tr.insertText(item.text));
-      } else if (item.key === "Enter")
-        chainCommands(commands.continue, baseKeymap.Enter)(
-          state,
-          view.dispatch,
-          view,
-        );
-      else {
-        const backwardKey = item.key === "Backspace";
-        if (
-          chainCommands(
-            deleteSelection,
-            backwardKey ? backward : () => false,
-            backwardKey ? joinBackward : joinForward,
-          )(state, view.dispatch, view)
-        )
-          continue;
-        const { $from, from } = state.selection,
-          offset = $from.parentOffset,
-          text = $from.parent.textContent;
-        const segments = [
-          ...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
-            text,
-          ),
-        ];
-        const start = backwardKey
-          ? [...segments].reverse().find((part) => part.index < offset)?.index
-          : offset;
-        const end = backwardKey
-          ? offset
-          : segments.find((part) => part.index >= offset)?.index +
-            (segments.find((part) => part.index >= offset)?.segment.length ||
-              0);
-        if (Number.isFinite(start) && Number.isFinite(end) && end > start)
-          view.dispatch(
-            state.tr.delete(from - offset + start, from - offset + end),
-          );
+        if (field) document.execCommand("insertText", false, item.text);
+        else {
+          const { from, to } = view.state.selection;
+          const insert = () =>
+            view.state.tr.insertText(item.text).scrollIntoView();
+          if (
+            !view.someProp("handleTextInput", (f) =>
+              f(view, from, to, item.text, insert),
+            )
+          )
+            view.dispatch(insert());
+        }
+      } else {
+        const event = new KeyboardEvent("keydown", {
+          key: item.key,
+          keyCode: { Enter: 13, Backspace: 8, Delete: 46 }[item.key],
+          shiftKey: item.shift === "true",
+          bubbles: true,
+          cancelable: true,
+        });
+        // Use the real DOM/plugin route (menus, input-rule Undo, schema/base
+        // keymaps and ProseMirror's browser handling), rather than a second
+        // command chain. Synthetic events need an explicit browser fallback.
+        if ((field || view.dom).dispatchEvent(event)) {
+          if (field && item.key === "Enter") field.form?.requestSubmit();
+          else if (item.key === "Backspace" || item.key === "Delete")
+            document.execCommand(
+              item.key === "Backspace" ? "delete" : "forwardDelete",
+            );
+        }
+        // Let WebKit's mutations reach ProseMirror before replaying the next
+        // item or resolving the native adapter's flush/snapshot request.
+        await Promise.resolve();
       }
     }
     return true;

@@ -1,5 +1,11 @@
 # Luna release notes
 
+## 0.14.1 — 2026-10-15
+
+- Backspace through an empty list item without recreating its bullet. Press Return on an empty item to leave the list.
+- Startup typing and deletion now follow the same editor rules, including Markdown shortcuts and Shift-Return line breaks.
+- Tab and Shift-Tab indent and outdent list items. Outside a list, Tab moves focus instead of inserting spaces.
+
 ## 0.14.0 — 2026-10-15
 
 - Live View now uses ProseMirror for editing, selection, lists, and Undo.

@@ -10,7 +10,7 @@ final class NoteNavigationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
             skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
-        defer { workspace.close() }
+        defer { XCTAssertTrue(workspace.flushRecovery()); workspace.close() }
         let selected = try XCTUnwrap(workspace.selectedID)
         let file = root.appendingPathComponent("popup-target.txt")
         try "Keep on disk".write(to: file, atomically: true, encoding: .utf8)
@@ -45,7 +45,7 @@ final class NoteNavigationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
             skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
-        defer { workspace.close() }
+        defer { XCTAssertTrue(workspace.flushRecovery()); workspace.close() }
         let file = root.appendingPathComponent("saved.txt")
         try "Keep on disk".write(to: file, atomically: true, encoding: .utf8)
         var saved = Note(text: "Keep on disk", path: file.path)
@@ -82,7 +82,7 @@ final class NoteNavigationTests: XCTestCase {
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
         let workspace = Workspace(store: store,
             skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
-        defer { workspace.close() }
+        defer { XCTAssertTrue(workspace.flushRecovery()); workspace.close() }
         workspace.newNote()
         let editedID = try XCTUnwrap(workspace.selectedID)
         workspace.editor.string = "Keep this unsaved note"
@@ -115,7 +115,7 @@ final class NoteNavigationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
                                   skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
-        defer { workspace.close() }
+        defer { XCTAssertTrue(workspace.flushRecovery()); workspace.close() }
 
         let menu = workspace.makeNoteActionsMenu()
         XCTAssertEqual(menu.items.map(\.title), ["Pin", "Duplicate", "Share…", "Open in New Window", "Delete Note…"])
@@ -139,7 +139,7 @@ final class NoteNavigationTests: XCTestCase {
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
         let workspace = Workspace(store: store,
             skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
-        defer { workspace.close() }
+        defer { XCTAssertTrue(workspace.flushRecovery()); workspace.close() }
         let original = try XCTUnwrap(workspace.selectedID)
         workspace.editor.string = "Original"
         workspace.textDidChange(Notification(name: NSText.didChangeNotification))
@@ -153,7 +153,7 @@ final class NoteNavigationTests: XCTestCase {
         XCTAssertEqual(workspace.editor.string, "Original")
         XCTAssertNil(workspace.notes.first(where: { $0.id == copy })?.path)
         let child = try XCTUnwrap(workspace.openNoteInWindow(copy))
-        defer { child.close() }
+        defer { XCTAssertTrue(child.flushRecovery()); child.close() }
         child.window?.makeKeyAndOrderFront(nil)
         // XCTest has no active application/key window; verify the native responder chain directly.
         XCTAssertTrue(child.window?.nextResponder === child)
@@ -177,7 +177,7 @@ final class NoteNavigationTests: XCTestCase {
         let store = try RecoveryStore(directory: root.appendingPathComponent("Recovery"))
         let workspace = Workspace(store: store,
             skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
-        defer { workspace.close() }
+        defer { XCTAssertTrue(workspace.flushRecovery()); workspace.close() }
         let initialID = try XCTUnwrap(workspace.selectedID)
         // A brand-new note may not yet have a recovery file.
         XCTAssertTrue(workspace.removeNote(initialID))
@@ -212,7 +212,7 @@ final class NoteNavigationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = Workspace(store: try RecoveryStore(directory: root.appendingPathComponent("Recovery")),
                                   skinLibrary: SkinLibrary(root: root.appendingPathComponent("Skins"), startsTimer: false))
-        defer { workspace.close() }
+        defer { XCTAssertTrue(workspace.flushRecovery()); workspace.close() }
         workspace.notes = [Note(text: "First\nline", language: "Shell"), Note(text: "Second\nline", language: "Shell"), Note(text: "Third\nline", language: "Shell")]
         workspace.reloadShelf(); workspace.select(workspace.notes[0].id)
         let window = try XCTUnwrap(workspace.window)
